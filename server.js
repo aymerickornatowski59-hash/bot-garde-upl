@@ -11,15 +11,30 @@ const VERIFY_TOKEN = "garde123";
 
 let gardesActives = {};
 let utilisateurs = {};
+let historique = [];
 
-// 🔹 Vérification Webhook
+// Charger historique si existant
+if (fs.existsSync("historique.json")) {
+  historique = JSON.parse(fs.readFileSync("historique.json"));
+}
+
+// 🔹 Format date
+function formatDate(date) {
+  return date.toLocaleString("fr-FR");
+}
+
+// 🔹 Sauvegarde fichier
+function sauvegarderHistorique() {
+  fs.writeFileSync("historique.json", JSON.stringify(historique, null, 2));
+}
+
+// 🔹 Vérification webhook
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook vérifié");
     return res.status(200).send(challenge);
   }
 
@@ -34,20 +49,18 @@ app.post("/webhook", async (req, res) => {
 
     const sender = event.sender.id;
 
-    if (event.message && event.message.text) {
+    if (event.message?.text) {
       const text = event.message.text.toLowerCase();
 
       // 🔹 ENREGISTRER NOM
       if (text.startsWith("nom ")) {
         const prenom = text.replace("nom ", "").trim();
         utilisateurs[sender] = prenom;
-
-        await sendMessage(sender, `✅ Nom enregistré : ${prenom}`);
+        return sendMessage(sender, `✅ Nom enregistré : ${prenom}`);
       }
 
       // 🔹 ARRIVEE
-      else if (text === "arrivee") {
-
+      if (text === "arrivee") {
         if (!utilisateurs[sender]) {
           return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
         }
@@ -56,61 +69,107 @@ app.post("/webhook", async (req, res) => {
           debut: new Date()
         };
 
-        await sendMessage(sender, "✅ Arrivée enregistrée !");
+        return sendMessage(sender, "✅ Arrivée enregistrée !");
       }
 
       // 🔹 DEPART
-      else if (text === "depart") {
+      if (text === "depart") {
         if (!gardesActives[sender]) {
-          await sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
-        } else {
-          const debut = gardesActives[sender].debut;
-          const fin = new Date();
-          const duree = Math.floor((fin - debut) / 60000);
-          const prenom = utilisateurs[sender] || sender;
-
-          const log = `${prenom} | ${debut} | ${fin} | ${duree} minutes\n`;
-          fs.appendFileSync("historique.txt", log);
-
-          delete gardesActives[sender];
-
-          await sendMessage(sender, `🕒 Garde terminée : ${duree} minutes`);
+          return sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
         }
+
+        const debut = gardesActives[sender].debut;
+        const fin = new Date();
+        const prenom = utilisateurs[sender] || "Inconnu";
+
+        historique.push({
+          nom: prenom,
+          debut: debut,
+          fin: fin
+        });
+
+        sauvegarderHistorique();
+
+        delete gardesActives[sender];
+
+        return sendMessage(
+          sender,
+          `🕒 Garde terminée\nArrivée : ${formatDate(debut)}\nDépart : ${formatDate(fin)}`
+        );
       }
 
       // 🔹 QUI EST EN GARDE
-      else if (text === "garde") {
+      if (text === "garde") {
         const actifs = Object.keys(gardesActives);
 
         if (actifs.length === 0) {
-          await sendMessage(sender, "👮 Personne n'est en garde actuellement.");
-        } else {
-          let message = "👮 En garde actuellement :\n";
-
-          actifs.forEach(id => {
-            const prenom = utilisateurs[id] || "Inconnu";
-            const minutes = Math.floor(
-              (new Date() - gardesActives[id].debut) / 60000
-            );
-
-            message += `• ${prenom} (${minutes} min)\n`;
-          });
-
-          await sendMessage(sender, message);
+          return sendMessage(sender, "👮 Personne en garde actuellement.");
         }
+
+        let message = "👮 En garde actuellement :\n\n";
+
+        actifs.forEach(id => {
+          const prenom = utilisateurs[id] || "Inconnu";
+          const minutes = Math.floor(
+            (new Date() - gardesActives[id].debut) / 60000
+          );
+
+          message += `• ${prenom} (${minutes} min)\n`;
+        });
+
+        return sendMessage(sender, message);
       }
 
-      else {
-        await sendMessage(sender,
-          "Commande inconnue.\n\nTape :\n- nom TonPrenom\n- arrivee\n- depart\n- garde"
+      // 🔹 JOUR (GARDES DU JOUR)
+      if (text === "jour") {
+        const aujourdHui = new Date().toDateString();
+
+        const gardesJour = historique.filter(g =>
+          new Date(g.debut).toDateString() === aujourdHui
         );
+
+        if (gardesJour.length === 0) {
+          return sendMessage(sender, "📅 Aucune garde aujourd'hui.");
+        }
+
+        let message = "📅 Gardes du jour :\n\n";
+
+        gardesJour.forEach(g => {
+          message += `• ${g.nom}\n`;
+          message += `  Arrivée : ${formatDate(new Date(g.debut))}\n`;
+          message += `  Départ : ${formatDate(new Date(g.fin))}\n\n`;
+        });
+
+        return sendMessage(sender, message);
       }
+
+      // 🔹 HISTORIQUE COMPLET
+      if (text === "historique") {
+        if (historique.length === 0) {
+          return sendMessage(sender, "📂 Aucun historique.");
+        }
+
+        let message = "📂 Historique complet :\n\n";
+
+        historique.forEach(g => {
+          message += `• ${g.nom}\n`;
+          message += `  Date : ${new Date(g.debut).toLocaleDateString("fr-FR")}\n`;
+          message += `  Arrivée : ${formatDate(new Date(g.debut))}\n`;
+          message += `  Départ : ${formatDate(new Date(g.fin))}\n\n`;
+        });
+
+        return sendMessage(sender, message);
+      }
+
+      return sendMessage(
+        sender,
+        "Commandes disponibles :\n\n- nom TonPrenom\n- arrivee\n- depart\n- garde\n- jour\n- historique"
+      );
     }
 
     res.sendStatus(200);
-
   } catch (error) {
-    console.log("❌ Erreur webhook :", error.response?.data || error.message);
+    console.log(error);
     res.sendStatus(500);
   }
 });
@@ -122,14 +181,14 @@ async function sendMessage(sender, text) {
       `https://graph.facebook.com/v17.0/me/messages`,
       {
         recipient: { id: sender },
-        message: { text },
+        message: { text }
       },
       {
-        params: { access_token: PAGE_ACCESS_TOKEN },
+        params: { access_token: PAGE_ACCESS_TOKEN }
       }
     );
   } catch (error) {
-    console.log("❌ Erreur envoi message :", error.response?.data || error.message);
+    console.log("Erreur envoi message:", error.response?.data);
   }
 }
 

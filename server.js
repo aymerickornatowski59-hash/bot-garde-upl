@@ -1,196 +1,174 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
-const fs = require("fs");
+const mongoose = require("mongoose");
 
 const app = express();
 app.use(bodyParser.json());
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = "garde123";
+const MONGO_URI = process.env.MONGO_URI;
 
-let gardesActives = {};
-let utilisateurs = {};
-let historique = [];
+// =======================
+// Connexion MongoDB
+// =======================
 
-// Charger historique si existant
-if (fs.existsSync("historique.json")) {
-  historique = JSON.parse(fs.readFileSync("historique.json"));
-}
+mongoose.connect(MONGO_URI)
+.then(() => console.log("✅ Connecté à MongoDB"))
+.catch(err => console.log("❌ Erreur MongoDB :", err));
 
-// 🔹 Format date
-function formatDate(date) {
-  return date.toLocaleString("fr-FR");
-}
+// =======================
+// Modèle Garde
+// =======================
 
-// 🔹 Sauvegarde fichier
-function sauvegarderHistorique() {
-  fs.writeFileSync("historique.json", JSON.stringify(historique, null, 2));
-}
-
-// 🔹 Vérification webhook
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
-  }
-
-  res.sendStatus(403);
+const gardeSchema = new mongoose.Schema({
+  nom: String,
+  arrivee: Date,
+  depart: Date
 });
 
-// 🔹 Réception messages
+const Garde = mongoose.model("Garde", gardeSchema);
+
+// =======================
+// Stockage temporaire
+// =======================
+
+let utilisateurs = {};
+let gardesActives = {};
+
+// =======================
+// Webhook GET
+// =======================
+
+app.get("/webhook", (req, res) => {
+  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+    res.send(req.query["hub.challenge"]);
+  } else {
+    res.send("Erreur token");
+  }
+});
+
+// =======================
+// Webhook POST
+// =======================
+
 app.post("/webhook", async (req, res) => {
-  try {
-    const event = req.body.entry?.[0]?.messaging?.[0];
-    if (!event) return res.sendStatus(200);
+  const event = req.body.entry?.[0]?.messaging?.[0];
+  if (!event) return res.sendStatus(200);
 
-    const sender = event.sender.id;
+  const sender = event.sender.id;
 
-    if (event.message?.text) {
-      const text = event.message.text.toLowerCase();
+  if (event.message && event.message.text) {
+    const text = event.message.text.toLowerCase();
 
-      // 🔹 ENREGISTRER NOM
-      if (text.startsWith("nom ")) {
-        const prenom = text.replace("nom ", "").trim();
-        utilisateurs[sender] = prenom;
-        return sendMessage(sender, `✅ Nom enregistré : ${prenom}`);
-      }
-
-      // 🔹 ARRIVEE
-      if (text === "arrivee") {
-        if (!utilisateurs[sender]) {
-          return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
-        }
-
-        gardesActives[sender] = {
-          debut: new Date()
-        };
-
-        return sendMessage(sender, "✅ Arrivée enregistrée !");
-      }
-
-      // 🔹 DEPART
-      if (text === "depart") {
-        if (!gardesActives[sender]) {
-          return sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
-        }
-
-        const debut = gardesActives[sender].debut;
-        const fin = new Date();
-        const prenom = utilisateurs[sender] || "Inconnu";
-
-        historique.push({
-          nom: prenom,
-          debut: debut,
-          fin: fin
-        });
-
-        sauvegarderHistorique();
-
-        delete gardesActives[sender];
-
-        return sendMessage(
-          sender,
-          `🕒 Garde terminée\nArrivée : ${formatDate(debut)}\nDépart : ${formatDate(fin)}`
-        );
-      }
-
-      // 🔹 QUI EST EN GARDE
-      if (text === "garde") {
-        const actifs = Object.keys(gardesActives);
-
-        if (actifs.length === 0) {
-          return sendMessage(sender, "👮 Personne en garde actuellement.");
-        }
-
-        let message = "👮 En garde actuellement :\n\n";
-
-        actifs.forEach(id => {
-          const prenom = utilisateurs[id] || "Inconnu";
-          const minutes = Math.floor(
-            (new Date() - gardesActives[id].debut) / 60000
-          );
-
-          message += `• ${prenom} (${minutes} min)\n`;
-        });
-
-        return sendMessage(sender, message);
-      }
-
-      // 🔹 JOUR (GARDES DU JOUR)
-      if (text === "jour") {
-        const aujourdHui = new Date().toDateString();
-
-        const gardesJour = historique.filter(g =>
-          new Date(g.debut).toDateString() === aujourdHui
-        );
-
-        if (gardesJour.length === 0) {
-          return sendMessage(sender, "📅 Aucune garde aujourd'hui.");
-        }
-
-        let message = "📅 Gardes du jour :\n\n";
-
-        gardesJour.forEach(g => {
-          message += `• ${g.nom}\n`;
-          message += `  Arrivée : ${formatDate(new Date(g.debut))}\n`;
-          message += `  Départ : ${formatDate(new Date(g.fin))}\n\n`;
-        });
-
-        return sendMessage(sender, message);
-      }
-
-      // 🔹 HISTORIQUE COMPLET
-      if (text === "historique") {
-        if (historique.length === 0) {
-          return sendMessage(sender, "📂 Aucun historique.");
-        }
-
-        let message = "📂 Historique complet :\n\n";
-
-        historique.forEach(g => {
-          message += `• ${g.nom}\n`;
-          message += `  Date : ${new Date(g.debut).toLocaleDateString("fr-FR")}\n`;
-          message += `  Arrivée : ${formatDate(new Date(g.debut))}\n`;
-          message += `  Départ : ${formatDate(new Date(g.fin))}\n\n`;
-        });
-
-        return sendMessage(sender, message);
-      }
-
-      return sendMessage(
-        sender,
-        "Commandes disponibles :\n\n- nom TonPrenom\n- arrivee\n- depart\n- garde\n- jour\n- historique"
-      );
+    // ================= NOM =================
+    if (text.startsWith("nom ")) {
+      const nom = text.replace("nom ", "");
+      utilisateurs[sender] = nom;
+      return sendMessage(sender, `✅ Nom enregistré : ${nom}`);
     }
 
-    res.sendStatus(200);
-  } catch (error) {
-    console.log(error);
-    res.sendStatus(500);
+    // ================= ARRIVEE =================
+    if (text === "arrivee") {
+      if (!utilisateurs[sender]) {
+        return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+      }
+
+      gardesActives[sender] = new Date();
+      return sendMessage(sender, "✅ Arrivée enregistrée !");
+    }
+
+    // ================= DEPART =================
+    if (text === "depart") {
+      if (!gardesActives[sender]) {
+        return sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
+      }
+
+      const debut = gardesActives[sender];
+      const fin = new Date();
+
+      await Garde.create({
+        nom: utilisateurs[sender],
+        arrivee: debut,
+        depart: fin
+      });
+
+      delete gardesActives[sender];
+
+      return sendMessage(sender, "🕒 Garde enregistrée !");
+    }
+
+    // ================= QUI EST EN GARDE =================
+    if (text === "garde") {
+      if (Object.keys(gardesActives).length === 0) {
+        return sendMessage(sender, "❌ Personne n’est en garde actuellement.");
+      }
+
+      let message = "👮 En garde actuellement :\n";
+      for (let id in gardesActives) {
+        message += `- ${utilisateurs[id]}\n`;
+      }
+
+      return sendMessage(sender, message);
+    }
+
+    // ================= JOUR =================
+    if (text === "jour") {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      const gardes = await Garde.find({
+        arrivee: { $gte: today }
+      });
+
+      if (gardes.length === 0) {
+        return sendMessage(sender, "📅 Aucune garde aujourd'hui.");
+      }
+
+      let message = "📅 Gardes du jour :\n";
+      gardes.forEach(g => {
+        message += `- ${g.nom} | ${g.arrivee.toLocaleTimeString()} - ${g.depart.toLocaleTimeString()}\n`;
+      });
+
+      return sendMessage(sender, message);
+    }
+
+    // ================= HISTORIQUE =================
+    if (text === "historique") {
+      const gardes = await Garde.find().sort({ arrivee: -1 }).limit(20);
+
+      if (gardes.length === 0) {
+        return sendMessage(sender, "📜 Aucun historique.");
+      }
+
+      let message = "📜 Historique :\n";
+      gardes.forEach(g => {
+        message += `- ${g.nom} | ${g.arrivee.toLocaleDateString()} ${g.arrivee.toLocaleTimeString()}\n`;
+      });
+
+      return sendMessage(sender, message);
+    }
+
+    return sendMessage(sender, "Commande inconnue.\nTape : arrivee, depart, garde, jour, historique");
   }
+
+  res.sendStatus(200);
 });
 
-// 🔹 Envoi message
-async function sendMessage(sender, text) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v17.0/me/messages`,
-      {
-        recipient: { id: sender },
-        message: { text }
-      },
-      {
-        params: { access_token: PAGE_ACCESS_TOKEN }
-      }
-    );
-  } catch (error) {
-    console.log("Erreur envoi message:", error.response?.data);
-  }
+// =======================
+// Envoyer message
+// =======================
+
+function sendMessage(sender, text) {
+  return axios.post(
+    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: sender },
+      message: { text },
+    }
+  );
 }
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("🚀 Serveur démarré"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("🚀 Bot démarré"));

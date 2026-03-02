@@ -9,8 +9,8 @@ app.use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = "garde123";
 
-// Stockage en mémoire
 let gardesActives = {};
+let utilisateurs = {};
 
 // 🔹 Vérification Webhook
 app.get("/webhook", (req, res) => {
@@ -26,7 +26,7 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
-// 🔹 Réception des messages
+// 🔹 Réception messages
 app.post("/webhook", async (req, res) => {
   try {
     const event = req.body.entry?.[0]?.messaging?.[0];
@@ -37,17 +37,29 @@ app.post("/webhook", async (req, res) => {
     if (event.message && event.message.text) {
       const text = event.message.text.toLowerCase();
 
-      // ARRIVEE
-      if (text === "arrivee") {
+      // 🔹 ENREGISTRER NOM
+      if (text.startsWith("nom ")) {
+        const prenom = text.replace("nom ", "").trim();
+        utilisateurs[sender] = prenom;
+
+        await sendMessage(sender, `✅ Nom enregistré : ${prenom}`);
+      }
+
+      // 🔹 ARRIVEE
+      else if (text === "arrivee") {
+
+        if (!utilisateurs[sender]) {
+          return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+        }
+
         gardesActives[sender] = {
-          debut: new Date(),
-          nom: sender
+          debut: new Date()
         };
 
         await sendMessage(sender, "✅ Arrivée enregistrée !");
       }
 
-      // DEPART
+      // 🔹 DEPART
       else if (text === "depart") {
         if (!gardesActives[sender]) {
           await sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
@@ -55,8 +67,9 @@ app.post("/webhook", async (req, res) => {
           const debut = gardesActives[sender].debut;
           const fin = new Date();
           const duree = Math.floor((fin - debut) / 60000);
+          const prenom = utilisateurs[sender] || sender;
 
-          const log = `${sender} | ${debut} | ${fin} | ${duree} minutes\n`;
+          const log = `${prenom} | ${debut} | ${fin} | ${duree} minutes\n`;
           fs.appendFileSync("historique.txt", log);
 
           delete gardesActives[sender];
@@ -65,7 +78,7 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      // VOIR QUI EST EN GARDE
+      // 🔹 QUI EST EN GARDE
       else if (text === "garde") {
         const actifs = Object.keys(gardesActives);
 
@@ -75,10 +88,12 @@ app.post("/webhook", async (req, res) => {
           let message = "👮 En garde actuellement :\n";
 
           actifs.forEach(id => {
+            const prenom = utilisateurs[id] || "Inconnu";
             const minutes = Math.floor(
               (new Date() - gardesActives[id].debut) / 60000
             );
-            message += `• ${id} (${minutes} min)\n`;
+
+            message += `• ${prenom} (${minutes} min)\n`;
           });
 
           await sendMessage(sender, message);
@@ -86,7 +101,9 @@ app.post("/webhook", async (req, res) => {
       }
 
       else {
-        await sendMessage(sender, "Commande inconnue.\nTape : arrivee, depart ou garde");
+        await sendMessage(sender,
+          "Commande inconnue.\n\nTape :\n- nom TonPrenom\n- arrivee\n- depart\n- garde"
+        );
       }
     }
 
@@ -98,7 +115,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// 🔹 Fonction envoi message
+// 🔹 Envoi message
 async function sendMessage(sender, text) {
   try {
     await axios.post(
@@ -117,4 +134,4 @@ async function sendMessage(sender, text) {
 }
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("🚀 Serveur démarré sur le port", PORT));
+app.listen(PORT, () => console.log("🚀 Serveur démarré"));

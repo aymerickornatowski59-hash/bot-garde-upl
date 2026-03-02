@@ -6,36 +6,21 @@ const fs = require("fs");
 const app = express();
 app.use(bodyParser.json());
 
-// Variables d'environnement
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = "garde123";
 
-let pointages = {};
+let gardes = {}; // { senderId: { nom, debut } }
 
-// Route test (évite Cannot GET /)
-app.get("/", (req, res) => {
-  res.send("✅ Bot garde UPL en ligne !");
-});
-
-// Vérification Facebook
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook vérifié");
-    res.status(200).send(challenge);
+  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+    res.send(req.query["hub.challenge"]);
   } else {
-    console.log("❌ Erreur de vérification");
-    res.sendStatus(403);
+    res.send("Erreur token");
   }
 });
 
-// Réception des messages
-app.post("/webhook", (req, res) => {
+app.post("/webhook", async (req, res) => {
   const event = req.body.entry?.[0]?.messaging?.[0];
-
   if (!event) return res.sendStatus(200);
 
   const sender = event.sender.id;
@@ -43,25 +28,55 @@ app.post("/webhook", (req, res) => {
   if (event.message && event.message.text) {
     const text = event.message.text.toLowerCase();
 
-    if (text === "arrivee") {
-      pointages[sender] = new Date();
+    // Enregistrement nom
+    if (text.startsWith("nom ")) {
+      const nom = text.replace("nom ", "");
+      if (!gardes[sender]) gardes[sender] = {};
+      gardes[sender].nom = nom;
+      sendMessage(sender, `✅ Nom enregistré : ${nom}`);
+    }
+
+    // Arrivée
+    else if (text === "arrivee") {
+      if (!gardes[sender] || !gardes[sender].nom) {
+        return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+      }
+
+      gardes[sender].debut = new Date();
       sendMessage(sender, "✅ Arrivée enregistrée !");
     }
 
-    if (text === "depart") {
-      if (!pointages[sender]) {
-        sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
+    // Départ
+    else if (text === "depart") {
+      if (!gardes[sender] || !gardes[sender].debut) {
+        return sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
+      }
+
+      const debut = gardes[sender].debut;
+      const fin = new Date();
+      const duree = Math.floor((fin - debut) / 60000);
+
+      const log = `${gardes[sender].nom} | ${debut} | ${fin} | ${duree} minutes\n`;
+      fs.appendFileSync("historique.txt", log);
+
+      delete gardes[sender].debut;
+
+      sendMessage(sender, `🕒 Garde terminée : ${duree} minutes`);
+    }
+
+    // Qui est en garde ?
+    else if (text === "garde") {
+      const enGarde = Object.values(gardes)
+        .filter(g => g.debut)
+        .map(g => `- ${g.nom} (depuis ${g.debut.toLocaleTimeString()})`);
+
+      if (enGarde.length === 0) {
+        sendMessage(sender, "👮 Personne n'est en garde actuellement.");
       } else {
-        const debut = pointages[sender];
-        const fin = new Date();
-        const duree = Math.floor((fin - debut) / 60000);
-
-        const log = `${sender} | ${debut} | ${fin} | ${duree} minutes\n`;
-        fs.appendFileSync("historique.txt", log);
-
-        delete pointages[sender];
-
-        sendMessage(sender, `🕒 Garde terminée : ${duree} minutes`);
+        sendMessage(
+          sender,
+          "👮 Personnes actuellement en garde :\n\n" + enGarde.join("\n")
+        );
       }
     }
   }
@@ -69,25 +84,19 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(200);
 });
 
-// Envoi message Messenger
 async function sendMessage(sender, text) {
   try {
     await axios.post(
-      `https://graph.facebook.com/v17.0/me/messages`,
+      `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       {
         recipient: { id: sender },
         message: { text },
-      },
-      {
-        params: { access_token: PAGE_ACCESS_TOKEN },
       }
     );
   } catch (error) {
-    console.error("Erreur envoi message :", error.response?.data || error.message);
+    console.log("Erreur envoi message :", error.response?.data);
   }
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log("Bot démarré"));

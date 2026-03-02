@@ -6,23 +6,25 @@ const mongoose = require("mongoose");
 const app = express();
 app.use(bodyParser.json());
 
+// =============================
+// VARIABLES ENV
+// =============================
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = "garde123";
-const MONGO_URI = process.env.MONGO_URI;
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// =======================
-// Connexion MongoDB
-// =======================
+// =============================
+// CONNEXION MONGODB
+// =============================
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("✅ Connecté à MongoDB"))
+  .catch(err => console.log("❌ Erreur MongoDB :", err));
 
-mongoose.connect(MONGO_URI)
-.then(() => console.log("✅ Connecté à MongoDB"))
-.catch(err => console.log("❌ Erreur MongoDB :", err));
-
-// =======================
-// Modèle Garde
-// =======================
-
+// =============================
+// MODELES
+// =============================
 const gardeSchema = new mongoose.Schema({
+  userId: String,
   nom: String,
   arrivee: Date,
   depart: Date
@@ -30,17 +32,16 @@ const gardeSchema = new mongoose.Schema({
 
 const Garde = mongoose.model("Garde", gardeSchema);
 
-// =======================
-// Stockage temporaire
-// =======================
+const userSchema = new mongoose.Schema({
+  userId: String,
+  nom: String
+});
 
-let utilisateurs = {};
-let gardesActives = {};
+const User = mongoose.model("User", userSchema);
 
-// =======================
-// Webhook GET
-// =======================
-
+// =============================
+// WEBHOOK VERIFY
+// =============================
 app.get("/webhook", (req, res) => {
   if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
     res.send(req.query["hub.challenge"]);
@@ -49,10 +50,9 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-// =======================
-// Webhook POST
-// =======================
-
+// =============================
+// WEBHOOK POST
+// =============================
 app.post("/webhook", async (req, res) => {
   const event = req.body.entry?.[0]?.messaging?.[0];
   if (!event) return res.sendStatus(200);
@@ -62,89 +62,138 @@ app.post("/webhook", async (req, res) => {
   if (event.message && event.message.text) {
     const text = event.message.text.toLowerCase();
 
-    // ================= NOM =================
+    // =============================
+    // ENREGISTRER NOM
+    // =============================
     if (text.startsWith("nom ")) {
-      const nom = text.replace("nom ", "");
-      utilisateurs[sender] = nom;
+      const nom = text.replace("nom ", "").trim();
+
+      await User.findOneAndUpdate(
+        { userId: sender },
+        { nom },
+        { upsert: true }
+      );
+
       return sendMessage(sender, `✅ Nom enregistré : ${nom}`);
     }
 
-    // ================= ARRIVEE =================
+    const user = await User.findOne({ userId: sender });
+
+    if (!user) {
+      return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+    }
+
+    // =============================
+    // ARRIVEE
+    // =============================
     if (text === "arrivee") {
-      if (!utilisateurs[sender]) {
-        return sendMessage(sender, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+
+      const dejaEnCours = await Garde.findOne({
+        userId: sender,
+        depart: null
+      });
+
+      if (dejaEnCours) {
+        return sendMessage(sender, "⚠️ Tu es déjà en garde.");
       }
 
-      gardesActives[sender] = new Date();
+      await Garde.create({
+        userId: sender,
+        nom: user.nom,
+        arrivee: new Date(),
+        depart: null
+      });
+
       return sendMessage(sender, "✅ Arrivée enregistrée !");
     }
 
-    // ================= DEPART =================
+    // =============================
+    // DEPART
+    // =============================
     if (text === "depart") {
-      if (!gardesActives[sender]) {
+
+      const garde = await Garde.findOne({
+        userId: sender,
+        depart: null
+      });
+
+      if (!garde) {
         return sendMessage(sender, "⛔ Pas d'arrivée enregistrée.");
       }
 
-      const debut = gardesActives[sender];
-      const fin = new Date();
+      garde.depart = new Date();
+      await garde.save();
 
-      await Garde.create({
-        nom: utilisateurs[sender],
-        arrivee: debut,
-        depart: fin
-      });
+      const duree = Math.floor((garde.depart - garde.arrivee) / 60000);
 
-      delete gardesActives[sender];
-
-      return sendMessage(sender, "🕒 Garde enregistrée !");
+      return sendMessage(sender, `🕒 Garde terminée : ${duree} minutes`);
     }
 
-    // ================= QUI EST EN GARDE =================
+    // =============================
+    // QUI EST EN GARDE
+    // =============================
     if (text === "garde") {
-      if (Object.keys(gardesActives).length === 0) {
-        return sendMessage(sender, "❌ Personne n’est en garde actuellement.");
+
+      const enCours = await Garde.find({ depart: null });
+
+      if (enCours.length === 0) {
+        return sendMessage(sender, "📭 Personne n'est en garde actuellement.");
       }
 
-      let message = "👮 En garde actuellement :\n";
-      for (let id in gardesActives) {
-        message += `- ${utilisateurs[id]}\n`;
-      }
+      let message = "👮 En garde actuellement :\n\n";
+
+      enCours.forEach(g => {
+        message += `• ${g.nom} (depuis ${g.arrivee.toLocaleTimeString()})\n`;
+      });
 
       return sendMessage(sender, message);
     }
 
-    // ================= JOUR =================
+    // =============================
+    // GARDES DU JOUR
+    // =============================
     if (text === "jour") {
+
       const today = new Date();
-      today.setHours(0,0,0,0);
+      today.setHours(0, 0, 0, 0);
 
       const gardes = await Garde.find({
         arrivee: { $gte: today }
       });
 
       if (gardes.length === 0) {
-        return sendMessage(sender, "📅 Aucune garde aujourd'hui.");
+        return sendMessage(sender, "📭 Aucune garde aujourd’hui.");
       }
 
-      let message = "📅 Gardes du jour :\n";
+      let message = "📅 Gardes du jour :\n\n";
+
       gardes.forEach(g => {
-        message += `- ${g.nom} | ${g.arrivee.toLocaleTimeString()} - ${g.depart.toLocaleTimeString()}\n`;
+        message += `• ${g.nom}\n`;
+        message += `  Arrivée : ${g.arrivee.toLocaleTimeString()}\n`;
+        message += `  Départ : ${g.depart ? g.depart.toLocaleTimeString() : "En cours"}\n\n`;
       });
 
       return sendMessage(sender, message);
     }
 
-    // ================= HISTORIQUE =================
+    // =============================
+    // HISTORIQUE COMPLET
+    // =============================
     if (text === "historique") {
-      const gardes = await Garde.find().sort({ arrivee: -1 }).limit(20);
+
+      const gardes = await Garde.find().sort({ arrivee: -1 });
 
       if (gardes.length === 0) {
-        return sendMessage(sender, "📜 Aucun historique.");
+        return sendMessage(sender, "📭 Aucun historique.");
       }
 
-      let message = "📜 Historique :\n";
+      let message = "📚 Historique complet :\n\n";
+
       gardes.forEach(g => {
-        message += `- ${g.nom} | ${g.arrivee.toLocaleDateString()} ${g.arrivee.toLocaleTimeString()}\n`;
+        message += `• ${g.nom}\n`;
+        message += `  Date : ${g.arrivee.toLocaleDateString()}\n`;
+        message += `  Arrivée : ${g.arrivee.toLocaleTimeString()}\n`;
+        message += `  Départ : ${g.depart ? g.depart.toLocaleTimeString() : "En cours"}\n\n`;
       });
 
       return sendMessage(sender, message);
@@ -156,19 +205,23 @@ app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
 });
 
-// =======================
-// Envoyer message
-// =======================
-
-function sendMessage(sender, text) {
-  return axios.post(
-    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: sender },
-      message: { text },
-    }
-  );
+// =============================
+// ENVOI MESSAGE FACEBOOK
+// =============================
+async function sendMessage(sender, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: sender },
+        message: { text },
+      }
+    );
+  } catch (error) {
+    console.log("Erreur envoi message :", error.response?.data || error.message);
+  }
 }
 
+// =============================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("🚀 Bot démarré"));

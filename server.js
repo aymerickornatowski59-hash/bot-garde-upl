@@ -196,18 +196,14 @@ async function sendButtons(senderId) {
     {
       recipient: { id: senderId },
       message: {
-        attachment: {
-          type: "template",
-          payload: {
-            template_type: "button",
-            text: "Choisis une action :",
-            buttons: [
-              { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
-              { type: "postback", title: "🔴 Départ", payload: "depart" },
-              { type: "postback", title: "👀 En garde", payload: "en garde" }
-            ]
-          }
-        }
+        text: "Choisis une action 👇",
+        quick_replies: [
+          { content_type: "text", title: "🟢 Arrivée", payload: "arrivee" },
+          { content_type: "text", title: "🔴 Départ", payload: "depart" },
+          { content_type: "text", title: "👀 En garde", payload: "en garde" },
+          { content_type: "text", title: "📅 Résumé", payload: "resume" },
+          { content_type: "text", title: "📚 Historique", payload: "historique" }
+        ]
       }
     }
   );

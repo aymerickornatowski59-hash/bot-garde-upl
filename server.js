@@ -243,33 +243,67 @@ async function sendMessage(senderId, text) {
 // =======================
 // 🔘 QUICK REPLIES
 // =======================
-cron.schedule("0 20 * * *", async () => {
 
 // =======================
 // 📌 MENU PERSISTANT
 // =======================
 async function setPersistentMenu() {
-  await axios.post(
-    `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      persistent_menu: [
-        {
-          locale: "default",
-          composer_input_disabled: false,
-          call_to_actions: [
-            { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
-            { type: "postback", title: "🔴 Départ", payload: "depart" },
-            { type: "postback", title: "👀 En garde", payload: "en garde" },
-            { type: "postback", title: "📅 Résumé", payload: "resume" },
-            { type: "postback", title: "📚 Historique", payload: "historique" }
-          ]
-        }
-      ]
-    }
-  );
+  try {
+    const response = await axios.post(
+      `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        persistent_menu: [
+          {
+            locale: "default",
+            composer_input_disabled: false,
+            call_to_actions: [
+              { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
+              { type: "postback", title: "🔴 Départ", payload: "depart" },
+              { type: "postback", title: "👀 En garde", payload: "en garde" },
+              { type: "postback", title: "📅 Résumé", payload: "resume" },
+              { type: "postback", title: "📚 Historique", payload: "historique" }
+            ]
+          }
+        ]
+      }
+    );
 
-  console.log("✅ Menu persistant activé");
+    console.log("✅ Menu persistant activé", response.data);
+  } catch (error) {
+    console.log("❌ Erreur menu persistant:");
+    console.log(error.response?.data || error.message);
+  }
 }
+
+// =======================
+// 📅 Résumé automatique
+// =======================
+cron.schedule("0 20 * * *", async () => {
+  console.log("📊 Envoi résumé automatique...");
+
+  const today = new Date().toISOString().split("T")[0];
+  const gardes = await Garde.find({ date: today });
+  const users = await User.find();
+
+  if (gardes.length === 0) return;
+
+  const liste = gardes.map(g => {
+    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+    const depart = g.depart
+      ? new Date(g.depart).toLocaleTimeString("fr-FR")
+      : "En cours";
+
+    return `• ${g.nom} : ${arrivee} → ${depart}`;
+  }).join("\n");
+
+  const message = `📅 Résumé automatique (${today})\n\n${liste}`;
+
+  for (const user of users) {
+    await sendMessage(user.messengerId, message);
+  }
+
+  console.log("✅ Résumé envoyé");
+});
 
 // =======================
 // 📅 Résumé automatique (test 1 min)

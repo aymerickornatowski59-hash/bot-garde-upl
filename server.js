@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = "test";
 
 if (!MONGODB_URI) {
   console.error("❌ MONGODB_URI manquant !");

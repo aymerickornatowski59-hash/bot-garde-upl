@@ -243,24 +243,7 @@ async function sendMessage(senderId, text) {
 // =======================
 // 🔘 QUICK REPLIES
 // =======================
-async function sendButtons(senderId) {
-  await axios.post(
-    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: senderId },
-      message: {
-        text: "Choisis une action 👇",
-        quick_replies: [
-          { content_type: "text", title: "🟢 Arrivée", payload: "arrivee" },
-          { content_type: "text", title: "🔴 Départ", payload: "depart" },
-          { content_type: "text", title: "👀 En garde", payload: "en garde" },
-          { content_type: "text", title: "📅 Résumé", payload: "resume" },
-          { content_type: "text", title: "📚 Historique", payload: "historique" }
-        ]
-      }
-    }
-  );
-}
+cron.schedule("0 20 * * *", async () => {
 
 // =======================
 // 📌 MENU PERSISTANT

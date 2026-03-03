@@ -69,6 +69,10 @@ app.post("/webhook", async (req, res) => {
       if (event.message) {
         await handleMessage(event.sender.id, event.message.text);
       }
+
+      if (event.postback) {
+        await handleMessage(event.sender.id, event.postback.payload);
+      }
     }
     res.status(200).send("EVENT_RECEIVED");
   } else {

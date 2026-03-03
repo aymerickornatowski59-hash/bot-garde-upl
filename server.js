@@ -230,37 +230,71 @@ async function handleMessage(senderId, text) {
   }
   if (text === "classement") {
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
 
-    const gardes = await Garde.find({
-      depart: { $ne: null }
-    });
+  const gardes = await Garde.find({
+    depart: { $ne: null }
+  });
 
-    const totals = {};
+  const stats = {};
 
-    for (const g of gardes) {
-      const date = new Date(g.arrivee);
+  for (const g of gardes) {
+    const date = new Date(g.arrivee);
 
-      if (
-        date.getMonth() === currentMonth &&
-        date.getFullYear() === currentYear
-      ) {
-        const duration = (new Date(g.depart) - new Date(g.arrivee)) / 1000; // secondes
+    if (
+      date.getMonth() === currentMonth &&
+      date.getFullYear() === currentYear
+    ) {
+      const duration = (new Date(g.depart) - new Date(g.arrivee)) / 1000;
 
-        if (!totals[g.nom]) totals[g.nom] = 0;
-        totals[g.nom] += duration;
+      if (!stats[g.nom]) {
+        stats[g.nom] = {
+          total: 0,
+          count: 0
+        };
       }
-    }
 
-    const classement = Object.entries(totals)
-      .sort((a, b) => b[1] - a[1]);
-
-    if (classement.length === 0) {
-      await sendMessage(senderId, "📊 Aucun pointage ce mois-ci.");
-      return;
+      stats[g.nom].total += duration;
+      stats[g.nom].count += 1;
     }
+  }
+
+  const classement = Object.entries(stats)
+    .sort((a, b) => b[1].total - a[1].total);
+
+  if (classement.length === 0) {
+    await sendMessage(senderId, "📊 Aucun pointage ce mois-ci.");
+    return;
+  }
+
+  const mois = now.toLocaleDateString("fr-FR", {
+    month: "long",
+    year: "numeric"
+  });
+
+  const message = classement.map((entry, index) => {
+    const nom = entry[0];
+    const totalSeconds = entry[1].total;
+    const count = entry[1].count;
+
+    const heures = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    let medal = "";
+    if (index === 0) medal = "🥇";
+    else if (index === 1) medal = "🥈";
+    else if (index === 2) medal = "🥉";
+
+    return `${medal} ${nom} — ${count} garde(s) — ${heures}h${minutes
+      .toString()
+      .padStart(2, "0")}`;
+  }).join("\n");
+
+  await sendMessage(senderId, `📊 Classement ${mois} :\n\n${message}`);
+  return;
+}
 
     const mois = now.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 

@@ -177,32 +177,52 @@ async function handleMessage(senderId, text) {
   }
 
   // RESUME MANUEL
-  if (text === "resume") {
-    const today = new Date().toISOString().split("T")[0];
-    const gardes = await Garde.find({ date: today });
+if (text === "resume") {
+  const today = new Date().toISOString().split("T")[0];
+  const gardes = await Garde.find({ date: today });
 
-    if (gardes.length === 0) {
-      await sendMessage(senderId, "📅 Aucune garde aujourd’hui.");
-      return;
-    }
-
-    const liste = gardes.map(g => `• ${g.nom}`).join("\n");
-    await sendMessage(senderId, `📅 Résumé du jour :\n${liste}`);
+  if (gardes.length === 0) {
+    await sendMessage(senderId, "📅 Aucune garde aujourd’hui.");
     return;
   }
 
+  const liste = gardes.map(g => {
+    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+    const depart = g.depart
+      ? new Date(g.depart).toLocaleTimeString("fr-FR")
+      : "En cours";
+
+    return `• ${g.nom}\n   🕒 ${arrivee} → ${depart}`;
+  }).join("\n\n");
+
+  await sendMessage(senderId, `📅 Résumé du jour (${today}) :\n\n${liste}`);
+  return;
+}
+  
   // HISTORIQUE
-  if (text === "historique") {
-    const gardes = await Garde.find().sort({ arrivee: -1 }).limit(5);
+if (text === "historique") {
+  const gardes = await Garde.find()
+    .sort({ arrivee: -1 })
+    .limit(5);
 
-    const liste = gardes.map(g => {
-      const statut = g.depart ? "Terminé" : "En cours";
-      return `• ${g.nom} (${statut})`;
-    }).join("\n");
-
-    await sendMessage(senderId, `📚 Historique récent :\n${liste}`);
+  if (gardes.length === 0) {
+    await sendMessage(senderId, "📚 Aucun historique.");
     return;
   }
+
+  const liste = gardes.map(g => {
+    const date = new Date(g.arrivee).toLocaleDateString("fr-FR");
+    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+    const depart = g.depart
+      ? new Date(g.depart).toLocaleTimeString("fr-FR")
+      : "En cours";
+
+    return `• ${g.nom}\n   📆 ${date}\n   🕒 ${arrivee} → ${depart}`;
+  }).join("\n\n");
+
+  await sendMessage(senderId, `📚 Historique récent :\n\n${liste}`);
+  return;
+}
 
   // MENU PAR DEFAUT
   await sendButtons(senderId);

@@ -68,7 +68,11 @@ app.post("/webhook", async (req, res) => {
       const event = entry.messaging[0];
 
       if (event.message) {
-        await handleMessage(event.sender.id, event.message.text);
+  const messageText = event.message.text;
+  const payload = event.message.quick_reply?.payload;
+
+  await handleMessage(event.sender.id, payload || messageText);
+}
       }
 
       if (event.postback) {

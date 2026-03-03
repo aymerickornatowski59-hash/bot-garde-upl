@@ -15,8 +15,11 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 // 🔥 Connexion MongoDB
 // =======================
 mongoose.connect(MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log("✅ Connexion MongoDB réussie");
+
+    await setPersistentMenu(); // 👈 Active le menu permanent
+
     app.listen(PORT, () => {
       console.log("🚀 Bot démarré sur le port " + PORT);
     });
@@ -80,7 +83,6 @@ app.post("/webhook", async (req, res) => {
 
       }
     }
-
     return res.status(200).send("EVENT_RECEIVED");
   }
 
@@ -96,7 +98,6 @@ async function handleMessage(senderId, text) {
 
   let user = await User.findOne({ messengerId: senderId });
 
-  // ENREGISTRER NOM
   if (text.startsWith("nom ")) {
     const nom = text.substring(4).trim();
 
@@ -111,19 +112,18 @@ async function handleMessage(senderId, text) {
     return;
   }
 
-  // ARRIVEE
   if (text === "arrivee") {
     if (!user) {
       await sendMessage(senderId, "⚠️ Enregistre ton nom avec : nom TonPrenom");
       return;
     }
 
-    const dejaEnGarde = await Garde.findOne({
+    const deja = await Garde.findOne({
       messengerId: senderId,
       depart: null
     });
 
-    if (dejaEnGarde) {
+    if (deja) {
       await sendMessage(senderId, "⚠️ Tu es déjà en garde.");
       return;
     }
@@ -138,7 +138,6 @@ async function handleMessage(senderId, text) {
     return;
   }
 
-  // DEPART
   if (text === "depart") {
     if (!user) {
       await sendMessage(senderId, "⚠️ Enregistre ton nom d'abord.");
@@ -162,7 +161,6 @@ async function handleMessage(senderId, text) {
     return;
   }
 
-  // EN GARDE
   if (text === "en garde") {
     const gardes = await Garde.find({ depart: null });
 
@@ -176,55 +174,52 @@ async function handleMessage(senderId, text) {
     return;
   }
 
-  // RESUME MANUEL
-if (text === "resume") {
-  const today = new Date().toISOString().split("T")[0];
-  const gardes = await Garde.find({ date: today });
+  if (text === "resume") {
+    const today = new Date().toISOString().split("T")[0];
+    const gardes = await Garde.find({ date: today });
 
-  if (gardes.length === 0) {
-    await sendMessage(senderId, "📅 Aucune garde aujourd’hui.");
+    if (gardes.length === 0) {
+      await sendMessage(senderId, "📅 Aucune garde aujourd’hui.");
+      return;
+    }
+
+    const liste = gardes.map(g => {
+      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+      const depart = g.depart
+        ? new Date(g.depart).toLocaleTimeString("fr-FR")
+        : "En cours";
+
+      return `• ${g.nom}\n   🕒 ${arrivee} → ${depart}`;
+    }).join("\n\n");
+
+    await sendMessage(senderId, `📅 Résumé du jour (${today}) :\n\n${liste}`);
     return;
   }
 
-  const liste = gardes.map(g => {
-    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
-    const depart = g.depart
-      ? new Date(g.depart).toLocaleTimeString("fr-FR")
-      : "En cours";
+  if (text === "historique") {
+    const gardes = await Garde.find()
+      .sort({ arrivee: -1 })
+      .limit(5);
 
-    return `• ${g.nom}\n   🕒 ${arrivee} → ${depart}`;
-  }).join("\n\n");
+    if (gardes.length === 0) {
+      await sendMessage(senderId, "📚 Aucun historique.");
+      return;
+    }
 
-  await sendMessage(senderId, `📅 Résumé du jour (${today}) :\n\n${liste}`);
-  return;
-}
-  
-  // HISTORIQUE
-if (text === "historique") {
-  const gardes = await Garde.find()
-    .sort({ arrivee: -1 })
-    .limit(5);
+    const liste = gardes.map(g => {
+      const date = new Date(g.arrivee).toLocaleDateString("fr-FR");
+      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+      const depart = g.depart
+        ? new Date(g.depart).toLocaleTimeString("fr-FR")
+        : "En cours";
 
-  if (gardes.length === 0) {
-    await sendMessage(senderId, "📚 Aucun historique.");
+      return `• ${g.nom}\n   📆 ${date}\n   🕒 ${arrivee} → ${depart}`;
+    }).join("\n\n");
+
+    await sendMessage(senderId, `📚 Historique récent :\n\n${liste}`);
     return;
   }
 
-  const liste = gardes.map(g => {
-    const date = new Date(g.arrivee).toLocaleDateString("fr-FR");
-    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
-    const depart = g.depart
-      ? new Date(g.depart).toLocaleTimeString("fr-FR")
-      : "En cours";
-
-    return `• ${g.nom}\n   📆 ${date}\n   🕒 ${arrivee} → ${depart}`;
-  }).join("\n\n");
-
-  await sendMessage(senderId, `📚 Historique récent :\n\n${liste}`);
-  return;
-}
-
-  // MENU PAR DEFAUT
   await sendButtons(senderId);
 }
 
@@ -242,7 +237,7 @@ async function sendMessage(senderId, text) {
 }
 
 // =======================
-// 🔘 BOUTONS
+// 🔘 QUICK REPLIES
 // =======================
 async function sendButtons(senderId) {
   await axios.post(
@@ -264,31 +259,53 @@ async function sendButtons(senderId) {
 }
 
 // =======================
-// 📅 Résumé automatique (TEST toutes les 1 min)
+// 📌 MENU PERSISTANT
+// =======================
+async function setPersistentMenu() {
+  await axios.post(
+    `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      persistent_menu: [
+        {
+          locale: "default",
+          composer_input_disabled: false,
+          call_to_actions: [
+            { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
+            { type: "postback", title: "🔴 Départ", payload: "depart" },
+            { type: "postback", title: "👀 En garde", payload: "en garde" },
+            { type: "postback", title: "📅 Résumé", payload: "resume" },
+            { type: "postback", title: "📚 Historique", payload: "historique" }
+          ]
+        }
+      ]
+    }
+  );
+
+  console.log("✅ Menu persistant activé");
+}
+
+// =======================
+// 📅 Résumé automatique (test 1 min)
 // =======================
 cron.schedule("*/1 * * * *", async () => {
-  console.log("📊 Envoi du résumé automatique...");
+  console.log("📊 Envoi résumé automatique...");
 
   const today = new Date().toISOString().split("T")[0];
   const gardes = await Garde.find({ date: today });
   const users = await User.find();
 
-  let message;
+  if (gardes.length === 0) return;
 
-  if (gardes.length === 0) {
-    message = "📅 Résumé du jour :\nAucune garde enregistrée.";
-  } else {
-    const liste = gardes.map(g => {
-      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
-      const depart = g.depart
-        ? new Date(g.depart).toLocaleTimeString("fr-FR")
-        : "En cours";
+  const liste = gardes.map(g => {
+    const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+    const depart = g.depart
+      ? new Date(g.depart).toLocaleTimeString("fr-FR")
+      : "En cours";
 
-      return `• ${g.nom} : ${arrivee} → ${depart}`;
-    }).join("\n");
+    return `• ${g.nom} : ${arrivee} → ${depart}`;
+  }).join("\n");
 
-    message = `📅 Résumé du jour :\n${liste}`;
-  }
+  const message = `📅 Résumé automatique (${today})\n\n${liste}`;
 
   for (const user of users) {
     await sendMessage(user.messengerId, message);

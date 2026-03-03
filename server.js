@@ -18,10 +18,14 @@ mongoose.connect(MONGODB_URI)
   .then(async () => {
     console.log("✅ Connexion MongoDB réussie");
 
-    await setPersistentMenu(); // 👈 Active le menu permanent
-
-    app.listen(PORT, () => {
+    app.listen(PORT, async () => {
       console.log("🚀 Bot démarré sur le port " + PORT);
+
+      try {
+        await setPersistentMenu();
+      } catch (err) {
+        console.log("⚠️ Menu déjà configuré ou erreur API");
+      }
     });
   })
   .catch(err => {
@@ -287,7 +291,7 @@ async function setPersistentMenu() {
 // =======================
 // 📅 Résumé automatique (test 1 min)
 // =======================
-cron.schedule("*/1 * * * *", async () => {
+cron.schedule("0 20 * * *", async () => {
   console.log("📊 Envoi résumé automatique...");
 
   const today = new Date().toISOString().split("T")[0];

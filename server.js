@@ -65,24 +65,26 @@ app.post("/webhook", async (req, res) => {
 
   if (body.object === "page") {
     for (const entry of body.entry) {
-      const event = entry.messaging[0];
+      for (const event of entry.messaging) {
 
-      if (event.message) {
-  const messageText = event.message.text;
-  const payload = event.message.quick_reply?.payload;
+        if (event.message) {
+          const messageText = event.message.text;
+          const payload = event.message.quick_reply?.payload;
 
-  await handleMessage(event.sender.id, payload || messageText);
-}
-      }
+          await handleMessage(event.sender.id, payload || messageText);
+        }
 
-      if (event.postback) {
-        await handleMessage(event.sender.id, event.postback.payload);
+        if (event.postback) {
+          await handleMessage(event.sender.id, event.postback.payload);
+        }
+
       }
     }
-    res.status(200).send("EVENT_RECEIVED");
-  } else {
-    res.sendStatus(404);
+
+    return res.status(200).send("EVENT_RECEIVED");
   }
+
+  res.sendStatus(404);
 });
 
 // =======================

@@ -173,6 +173,33 @@ async function handleMessage(senderId, text) {
   // MENU PAR DEFAUT
   await sendButtons(senderId);
 }
+// RESUME MANUEL
+if (text === "resume") {
+  const today = new Date().toISOString().split("T")[0];
+  const gardes = await Garde.find({ date: today });
+
+  if (gardes.length === 0) {
+    await sendMessage(senderId, "📅 Aucune garde aujourd’hui.");
+    return;
+  }
+
+  const liste = gardes.map(g => `• ${g.nom}`).join("\n");
+  await sendMessage(senderId, `📅 Résumé du jour :\n${liste}`);
+  return;
+}
+
+// HISTORIQUE
+if (text === "historique") {
+  const gardes = await Garde.find().sort({ arrivee: -1 }).limit(5);
+
+  const liste = gardes.map(g => {
+    const statut = g.depart ? "Terminé" : "En cours";
+    return `• ${g.nom} (${statut})`;
+  }).join("\n");
+
+  await sendMessage(senderId, `📚 Historique récent :\n${liste}`);
+  return;
+}
 
 // =======================
 // 📤 ENVOI MESSAGE

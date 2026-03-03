@@ -228,7 +228,57 @@ async function handleMessage(senderId, text) {
     await sendMessage(senderId, `📚 Historique récent :\n\n${liste}`);
     return;
   }
+  if (text === "classement") {
 
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const gardes = await Garde.find({
+      depart: { $ne: null }
+    });
+
+    const totals = {};
+
+    for (const g of gardes) {
+      const date = new Date(g.arrivee);
+
+      if (
+        date.getMonth() === currentMonth &&
+        date.getFullYear() === currentYear
+      ) {
+        const duration = (new Date(g.depart) - new Date(g.arrivee)) / 1000; // secondes
+
+        if (!totals[g.nom]) totals[g.nom] = 0;
+        totals[g.nom] += duration;
+      }
+    }
+
+    const classement = Object.entries(totals)
+      .sort((a, b) => b[1] - a[1]);
+
+    if (classement.length === 0) {
+      await sendMessage(senderId, "📊 Aucun pointage ce mois-ci.");
+      return;
+    }
+
+    const mois = now.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+
+    const message = classement.map((entry, index) => {
+      const heures = Math.floor(entry[1] / 3600);
+      const minutes = Math.floor((entry[1] % 3600) / 60);
+
+      let medal = "";
+      if (index === 0) medal = "🥇";
+      else if (index === 1) medal = "🥈";
+      else if (index === 2) medal = "🥉";
+
+      return `${medal} ${entry[0]} — ${heures}h${minutes.toString().padStart(2, "0")}`;
+    }).join("\n");
+
+    await sendMessage(senderId, `📊 Classement ${mois} :\n\n${message}`);
+    return;
+  }
   await sendMessage(senderId, "Utilise le menu en bas 👇");
 }
 
@@ -277,7 +327,8 @@ async function setPersistentMenu() {
             { type: "postback", title: "🔴 Départ", payload: "depart" },
             { type: "postback", title: "👀 En garde", payload: "en garde" },
             { type: "postback", title: "📅 Résumé", payload: "resume" },
-            { type: "postback", title: "📚 Historique", payload: "historique" }
+            { type: "postback", title: "📚 Historique", payload: "historique" },
+            { type: "postback", title: "🏆 Classement", payload: "classement" }
           ]
         }
       ]

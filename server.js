@@ -6,6 +6,22 @@ const cron = require("node-cron");
 const app = express();
 app.use(express.json());
 
+/* =========================
+   🔒 Politique de confidentialité
+========================= */
+app.get("/privacy", (req, res) => {
+  res.send(`
+    <h1>Politique de confidentialité - Bot Garde UPL</h1>
+    <p>Ce bot enregistre uniquement :</p>
+    <ul>
+      <li>Le prénom fourni par l'utilisateur</li>
+      <li>Les horaires d'arrivée et de départ</li>
+    </ul>
+    <p>Aucune donnée n’est partagée avec des tiers.</p>
+    <p>Les données sont stockées uniquement pour le suivi interne des gardes.</p>
+  `);
+});
+
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;

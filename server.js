@@ -25,9 +25,15 @@ mongoose.connect(MONGODB_URI)
   });
 
 // =======================
-// 📦 Schema
+// 📦 Schemas
 // =======================
+const userSchema = new mongoose.Schema({
+  messengerId: String,
+  nom: String
+});
+
 const gardeSchema = new mongoose.Schema({
+  messengerId: String,
   nom: String,
   arrivee: Date,
   depart: Date,
@@ -37,26 +43,21 @@ const gardeSchema = new mongoose.Schema({
   }
 });
 
+const User = mongoose.model("User", userSchema);
 const Garde = mongoose.model("Garde", gardeSchema);
 
 // =======================
 // 🔐 Vérification Webhook
 // =======================
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token === VERIFY_TOKEN) {
-    console.log("✅ Webhook vérifié");
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+  if (req.query["hub.verify_token"] === VERIFY_TOKEN) {
+    return res.status(200).send(req.query["hub.challenge"]);
   }
+  res.sendStatus(403);
 });
 
 // =======================
-// 📩 Réception messages
+// 📩 Webhook réception
 // =======================
 app.post("/webhook", async (req, res) => {
   const body = req.body;
@@ -66,10 +67,7 @@ app.post("/webhook", async (req, res) => {
       const event = entry.messaging[0];
 
       if (event.message) {
-        const senderId = event.sender.id;
-        const messageText = event.message.text;
-
-        await handleMessage(senderId, messageText);
+        await handleMessage(event.sender.id, event.message.text);
       }
     }
     res.status(200).send("EVENT_RECEIVED");
@@ -79,59 +77,86 @@ app.post("/webhook", async (req, res) => {
 });
 
 // =======================
-// 🧠 Logique BOT
+// 🧠 LOGIQUE BOT
 // =======================
-async function handleMessage(senderId, messageText) {
-  if (!messageText) return;
+async function handleMessage(senderId, text) {
+  if (!text) return;
+  text = text.toLowerCase();
 
-  const text = messageText.toLowerCase();
+  let user = await User.findOne({ messengerId: senderId });
 
   // ENREGISTRER NOM
   if (text.startsWith("nom ")) {
-    const nom = messageText.substring(4).trim();
+    const nom = text.substring(4).trim();
 
-    await Garde.create({
-      nom,
-      arrivee: new Date()
-    });
+    if (!user) {
+      user = new User({ messengerId: senderId, nom });
+    } else {
+      user.nom = nom;
+    }
 
-    await sendMessage(senderId, `✅ ${nom} est enregistré en garde.`);
+    await user.save();
+    await sendMessage(senderId, `✅ Ton nom est enregistré : ${nom}`);
     return;
   }
 
   // ARRIVEE
   if (text === "arrivee") {
-    await sendMessage(senderId, "⚠️ Utilise : nom TonPrenom");
+    if (!user) {
+      await sendMessage(senderId, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+      return;
+    }
+
+    const dejaEnGarde = await Garde.findOne({
+      messengerId: senderId,
+      depart: null
+    });
+
+    if (dejaEnGarde) {
+      await sendMessage(senderId, "⚠️ Tu es déjà en garde.");
+      return;
+    }
+
+    await Garde.create({
+      messengerId: senderId,
+      nom: user.nom,
+      arrivee: new Date()
+    });
+
+    await sendMessage(senderId, `🟢 ${user.nom} est en garde.`);
     return;
   }
 
   // DEPART
-  if (text.startsWith("depart ")) {
-    const nom = messageText.substring(7).trim();
+  if (text === "depart") {
+    if (!user) {
+      await sendMessage(senderId, "⚠️ Enregistre ton nom d'abord.");
+      return;
+    }
 
     const garde = await Garde.findOne({
-      nom,
+      messengerId: senderId,
       depart: null
     }).sort({ arrivee: -1 });
 
     if (!garde) {
-      await sendMessage(senderId, "❌ Aucune garde active trouvée.");
+      await sendMessage(senderId, "❌ Aucune garde active.");
       return;
     }
 
     garde.depart = new Date();
     await garde.save();
 
-    await sendMessage(senderId, `🔚 ${nom} a terminé sa garde.`);
+    await sendMessage(senderId, `🔴 ${user.nom} a terminé sa garde.`);
     return;
   }
 
-  // QUI EST EN GARDE
+  // EN GARDE
   if (text === "en garde") {
     const gardes = await Garde.find({ depart: null });
 
     if (gardes.length === 0) {
-      await sendMessage(senderId, "👀 Personne n'est en garde.");
+      await sendMessage(senderId, "👀 Personne en garde.");
       return;
     }
 
@@ -140,22 +165,45 @@ async function handleMessage(senderId, messageText) {
     return;
   }
 
-  await sendMessage(senderId, "❓ Commandes disponibles:\n- nom TonPrenom\n- depart TonPrenom\n- en garde");
+  // MENU PAR DEFAUT
+  await sendButtons(senderId);
 }
 
 // =======================
-// 📤 Envoi message
+// 📤 ENVOI MESSAGE
 // =======================
 async function sendMessage(senderId, text) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-      {
-        recipient: { id: senderId },
-        message: { text }
+  await axios.post(
+    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: senderId },
+      message: { text }
+    }
+  );
+}
+
+// =======================
+// 🔘 BOUTONS
+// =======================
+async function sendButtons(senderId) {
+  await axios.post(
+    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: senderId },
+      message: {
+        attachment: {
+          type: "template",
+          payload: {
+            template_type: "button",
+            text: "Choisis une action :",
+            buttons: [
+              { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
+              { type: "postback", title: "🔴 Départ", payload: "depart" },
+              { type: "postback", title: "👀 En garde", payload: "en garde" }
+            ]
+          }
+        }
       }
-    );
-  } catch (error) {
-    console.error("❌ Erreur envoi message:", error.response?.data || error.message);
-  }
+    }
+  );
 }

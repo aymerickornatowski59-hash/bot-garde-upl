@@ -212,3 +212,38 @@ async function sendButtons(senderId) {
     }
   );
 }
+// =======================
+// 📅 Résumé quotidien
+// =======================
+
+cron.schedule("59 23 * * *", async () => {
+  console.log("📊 Envoi du résumé quotidien...");
+
+  const today = new Date().toISOString().split("T")[0];
+  const gardes = await Garde.find({ date: today });
+
+  const users = await User.find();
+
+  let message;
+
+  if (gardes.length === 0) {
+    message = "📅 Résumé du jour :\nAucune garde enregistrée.";
+  } else {
+    const liste = gardes.map(g => {
+      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+      const depart = g.depart
+        ? new Date(g.depart).toLocaleTimeString("fr-FR")
+        : "En cours";
+
+      return `• ${g.nom} : ${arrivee} → ${depart}`;
+    }).join("\n");
+
+    message = `📅 Résumé du jour :\n${liste}`;
+  }
+
+  for (const user of users) {
+    await sendMessage(user.messengerId, message);
+  }
+
+  console.log("✅ Résumé envoyé");
+});

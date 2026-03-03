@@ -296,23 +296,6 @@ async function handleMessage(senderId, text) {
   return;
 }
 
-    const mois = now.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
-
-    const message = classement.map((entry, index) => {
-      const heures = Math.floor(entry[1] / 3600);
-      const minutes = Math.floor((entry[1] % 3600) / 60);
-
-      let medal = "";
-      if (index === 0) medal = "🥇";
-      else if (index === 1) medal = "🥈";
-      else if (index === 2) medal = "🥉";
-
-      return `${medal} ${entry[0]} — ${heures}h${minutes.toString().padStart(2, "0")}`;
-    }).join("\n");
-
-    await sendMessage(senderId, `📊 Classement ${mois} :\n\n${message}`);
-    return;
-  }
   await sendMessage(senderId, "Utilise le menu en bas 👇");
 }
 

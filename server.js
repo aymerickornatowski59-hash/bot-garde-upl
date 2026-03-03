@@ -216,7 +216,7 @@ async function sendButtons(senderId) {
 // 📅 Résumé quotidien
 // =======================
 
-cron.schedule("59 23 * * *", async () => {
+cron.schedule("*/2 * * * *", async () => {
   console.log("📊 Envoi du résumé quotidien...");
 
   const today = new Date().toISOString().split("T")[0];

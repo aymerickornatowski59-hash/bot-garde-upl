@@ -148,10 +148,10 @@ async function sendMessage(senderId,text){
 await axios.post(
 `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
-recipient:{id},
+recipient:{id:senderId},
 message:{text}
 }
-);
+)
 
 }
 
@@ -316,7 +316,6 @@ const gardes=await Garde.find({date:today})
 const liste=gardes.map(g=>{
 
 const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
-
 const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
 return `• ${g.nom} ${a} → ${d}`
@@ -375,147 +374,8 @@ await sendMenu(senderId,"🏆 Classement\n\n"+msg)
 return
 }
 
-/* ALERTES HISTORIQUE */
-
-if(text==="alertes"){
-
-const alerts=await Alert.find().sort({debut:-1}).limit(10)
-
-const msg=alerts.map(a=>{
-const d=new Date(a.debut).toLocaleDateString("fr-FR")
-return 🚨 ${a.type}\n${d}\n${a.rapport||""}
-}).join("\n\n")
-
-await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
-return
 }
 
-/* MORTALITE */
-
-if(text==="mortalite"){
-
-attenteMortalite[senderId]=true
-
-await sendMessage(senderId,"Combien de poissons morts ?")
-
-return
-}
-
-if(attenteMortalite[senderId]){
-
-const q=parseInt(text)
-
-const mort=new Mortalite({
-nom:user.nom,
-quantite:q,
-date:new Date()
-})
-
-await mort.save()
-
-await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
-
-attenteMortalite[senderId]=false
-
-await sendMenu(senderId)
-
-return
-}
-
-/* NIVEAU EAU */
-
-if(text==="niveau"){
-
-attenteNiveau[senderId]=true
-
-await sendMessage(senderId,"Niveau ? normal / bas / critique")
-
-return
-}
-
-if(attenteNiveau[senderId]){
-
-const niv=new Niveau({
-niveau:text,
-nom:user.nom,
-date:new Date()
-})
-
-await niv.save()
-
-await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
-
-attenteNiveau[senderId]=false
-
-await sendMenu(senderId)
-
-return
-}
-
-/* ALERTES */
-
-if(text==="alertes"){
-
-const alerts = await Alert.find().sort({debut:-1}).limit(5)
-const morts = await Mortalite.find().sort({date:-1}).limit(5)
-const niveaux = await Niveau.find().sort({date:-1}).limit(5)
-
-let historique = "📋 Historique incidents\n\n"
-
-/* ALERTES */
-
-alerts.forEach(a=>{
-
-const d = new Date(a.debut).toLocaleDateString("fr-FR")
-
-historique +=
-🚨 ${a.type}
-📅 ${d}
-👤 ${a.createur}
-📝 ${a.rapport || "Aucun rapport"}
-
-
-
-})
-
-/* MORTALITE */
-
-morts.forEach(m=>{
-
-const d = new Date(m.date).toLocaleDateString("fr-FR")
-
-historique +=
-🐟 Mortalité
-📅 ${d}
-👤 ${m.nom}
-Quantité : ${m.quantite}
-
-
-
-})
-
-/* NIVEAU EAU */
-
-niveaux.forEach(n=>{
-
-const d = new Date(n.date).toLocaleDateString("fr-FR")
-
-historique +=
-💧 Niveau eau
-📅 ${d}
-👤 ${n.nom}
-Niveau : ${n.niveau}
-
-
-
-})
-
-await sendMenu(senderId, historique)
-
-return
-}
-
-}
 /* =========================
 CONFIG MESSENGER
 ========================= */
@@ -523,7 +383,7 @@ CONFIG MESSENGER
 async function setGetStarted(){
 
 await axios.post(
-https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN},
+`https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
 {
 get_started:{payload:"GET_STARTED"}
 }
@@ -534,7 +394,7 @@ get_started:{payload:"GET_STARTED"}
 async function resetMessengerMenu(){
 
 await axios.delete(
-https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN},
+`https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
 {
 data:{fields:["persistent_menu"]}
 }
@@ -545,7 +405,7 @@ data:{fields:["persistent_menu"]}
 async function setPersistentMenu(){
 
 await axios.post(
-https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN},
+`https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
 {
 persistent_menu:[
 {
@@ -576,9 +436,9 @@ const gardes=await Garde.find({date:today})
 const msg=gardes.map(g=>{
 const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
 const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
-return ${g.nom} ${a}→${d}
+return `${g.nom} ${a}→${d}`
 }).join("\n")
 
-await sendToAll(📅 Rapport du jour\n\n${msg})
+await sendToAll(`📅 Rapport du jour\n\n${msg}`)
 
 })

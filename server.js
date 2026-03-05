@@ -452,7 +452,7 @@ await sendMenu(senderId)
 return
 }
 
-/* ALERTE */
+/* ALERTES */
 
 if(text==="alertes"){
 
@@ -472,7 +472,7 @@ historique +=
 `🚨 ${a.type}
 📅 ${d}
 👤 ${a.createur}
-📝 ${a.rapport||"Aucun rapport"}
+📝 ${a.rapport || "Aucun rapport"}
 
 `
 
@@ -510,11 +510,10 @@ Niveau : ${n.niveau}
 
 })
 
-await sendMenu(senderId,historique)
+await sendMenu(senderId, historique)
 
 return
 }
-
 /* =========================
 CONFIG MESSENGER
 ========================= */

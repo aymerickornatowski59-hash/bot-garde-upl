@@ -85,10 +85,12 @@ const Niveau = mongoose.model("Niveau",niveauSchema)
 Variables temporaires
 ========================= */
 
-let attenteMortalite={}
-let attenteNiveau={}
 let attenteResumePhoto={}
 let photoTemp={}
+let attenteMortalite={}
+let attenteNiveau={}
+let attenteRapport={}
+let alerteActive=null
 
 /* =========================
 Webhook
@@ -190,8 +192,11 @@ quick_replies:[
 {content_type:"text",title:"📅 Résumé",payload:"resume"},
 {content_type:"text",title:"📚 Historique",payload:"historique"},
 {content_type:"text",title:"🏆 Classement",payload:"classement"},
+{content_type:"text",title:"🚨 Alerte",payload:"alerte"},
+{content_type:"text",title:"📋 Alertes",payload:"alertes"},
 {content_type:"text",title:"🐟 Mortalité",payload:"mortalite"},
-{content_type:"text",title:"💧 Niveau eau",payload:"niveau"}
+{content_type:"text",title:"💧 Niveau eau",payload:"niveau"},
+{content_type:"text",title:"✅ Fin alerte",payload:"fin alerte"}
 ]
 }
 }
@@ -205,7 +210,7 @@ PHOTO INCIDENT
 
 async function handlePhoto(senderId,attachments){
 
-const url = attachments[0].payload.url
+const url=attachments[0].payload.url
 
 photoTemp[senderId]=url
 attenteResumePhoto[senderId]=true
@@ -231,7 +236,6 @@ let user=await User.findOne({messengerId:senderId})
 if(attenteResumePhoto[senderId]){
 
 const photo=photoTemp[senderId]
-
 const users=await User.find()
 
 for(const u of users){
@@ -312,7 +316,6 @@ arrivee:new Date()
 await sendToAll(`🟢 ${user.nom} vient de prendre la garde`)
 
 await sendMenu(senderId)
-
 return
 }
 
@@ -333,7 +336,6 @@ await garde.save()
 await sendToAll(`🔴 ${user.nom} a quitté la garde`)
 
 await sendMenu(senderId)
-
 return
 }
 
@@ -351,7 +353,6 @@ return
 const liste=gardes.map(g=>"• "+g.nom).join("\n")
 
 await sendMenu(senderId,"👀 En garde :\n"+liste)
-
 return
 }
 
@@ -366,7 +367,6 @@ const gardes=await Garde.find({date:today})
 const liste=gardes.map(g=>{
 
 const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
-
 const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
 return `• ${g.nom} ${a} → ${d}`
@@ -374,7 +374,6 @@ return `• ${g.nom} ${a} → ${d}`
 }).join("\n")
 
 await sendMenu(senderId,"📅 Résumé\n\n"+liste)
-
 return
 }
 
@@ -390,7 +389,6 @@ return `• ${g.nom} (${d})`
 }).join("\n")
 
 await sendMenu(senderId,"📚 Historique\n\n"+liste)
-
 return
 }
 
@@ -424,7 +422,62 @@ return `${i+1}. ${c[0]} — ${h}h`
 }).join("\n")
 
 await sendMenu(senderId,"🏆 Classement\n\n"+msg)
+return
+}
 
+/* ALERTE */
+
+if(text==="alerte"){
+
+alerteActive=true
+
+await sendToAll(`🚨 ALERTE déclenchée par ${user.nom}`)
+
+await sendMenu(senderId)
+return
+}
+
+/* FIN ALERTE */
+
+if(text==="fin alerte"){
+
+attenteRapport[senderId]=true
+
+await sendMessage(senderId,"📝 Décris le rapport de fin d'alerte")
+
+return
+}
+
+if(attenteRapport[senderId]){
+
+await Alert.create({
+type:"incident",
+createur:user.nom,
+debut:new Date(),
+rapport:text
+})
+
+await sendToAll(`✅ Fin alerte\n📝 ${text}`)
+
+attenteRapport[senderId]=false
+alerteActive=null
+
+await sendMenu(senderId)
+return
+}
+
+/* HISTORIQUE ALERTES */
+
+if(text==="alertes"){
+
+const alerts=await Alert.find().sort({debut:-1}).limit(10)
+
+const msg=alerts.map(a=>{
+const d=new Date(a.debut).toLocaleDateString("fr-FR")
+return `🚨 ${a.type}\n${d}\n${a.rapport||""}`
+}).join("\n\n")
+
+await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
 return
 }
 
@@ -454,11 +507,10 @@ await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
 attenteMortalite[senderId]=false
 
 await sendMenu(senderId)
-
 return
 }
 
-/* NIVEAU */
+/* NIVEAU EAU */
 
 if(text==="niveau"){
 
@@ -482,7 +534,6 @@ await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
 attenteNiveau[senderId]=false
 
 await sendMenu(senderId)
-
 return
 }
 
@@ -525,7 +576,8 @@ locale:"default",
 composer_input_disabled:false,
 call_to_actions:[
 {type:"postback",title:"🟢 Arrivée",payload:"arrivee"},
-{type:"postback",title:"🔴 Départ",payload:"depart"}
+{type:"postback",title:"🔴 Départ",payload:"depart"},
+{type:"postback",title:"🚨 Alerte",payload:"alerte"}
 ]
 }
 ]

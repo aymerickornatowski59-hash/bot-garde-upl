@@ -356,12 +356,36 @@ async function setPersistentMenu() {
           locale: "default",
           composer_input_disabled: false,
           call_to_actions: [
-            { type: "postback", title: "🟢 Arrivée", payload: "arrivee" },
-            { type: "postback", title: "🔴 Départ", payload: "depart" },
-            { type: "postback", title: "👀 En garde", payload: "en garde" },
-            { type: "postback", title: "📅 Résumé", payload: "resume" },
-            { type: "postback", title: "📚 Historique", payload: "historique" },
-            { type: "postback", title: "🏆 Classement", payload: "classement" }
+            {
+              type: "postback",
+              title: "🟢 Arrivée",
+              payload: "arrivee"
+            },
+            {
+              type: "postback",
+              title: "🔴 Départ",
+              payload: "depart"
+            },
+            {
+              type: "postback",
+              title: "👀 En garde",
+              payload: "en garde"
+            },
+            {
+              type: "postback",
+              title: "📅 Résumé",
+              payload: "resume"
+            },
+            {
+              type: "postback",
+              title: "📚 Historique",
+              payload: "historique"
+            },
+            {
+              type: "postback",
+              title: "🏆 Classement",
+              payload: "classement"
+            }
           ]
         }
       ]
@@ -370,7 +394,6 @@ async function setPersistentMenu() {
 
   console.log("✅ Menu persistant activé");
 }
-
 /* =========================
    📅 Résumé automatique à 20h
 ========================= */

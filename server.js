@@ -1,39 +1,39 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const axios = require("axios");
-const cron = require("node-cron");
+const express = require("express")
+const mongoose = require("mongoose")
+const axios = require("axios")
+const cron = require("node-cron")
 
-const app = express();
-app.use(express.json());
+const app = express()
+app.use(express.json())
 
-const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const PORT = process.env.PORT || 3000
+const MONGODB_URI = process.env.MONGODB_URI
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN
 
 /* =========================
-Connexion MongoDB
+MongoDB
 ========================= */
 
 mongoose.connect(MONGODB_URI)
 .then(()=>{
 
-console.log("✅ MongoDB connecté");
+console.log("✅ MongoDB connecté")
 
 app.listen(PORT, async ()=>{
 
-console.log("🚀 Bot démarré");
+console.log("🚀 Bot démarré")
 
 try{
-await setGetStarted();
-await resetMessengerMenu();
-await setPersistentMenu();
+await setGetStarted()
+await resetMessengerMenu()
+await setPersistentMenu()
 }catch(e){}
 
-});
+})
 
 })
-.catch(err=>console.log(err));
+.catch(err=>console.log(err))
 
 /* =========================
 Schemas
@@ -42,7 +42,7 @@ Schemas
 const userSchema = new mongoose.Schema({
 messengerId:String,
 nom:String
-});
+})
 
 const gardeSchema = new mongoose.Schema({
 messengerId:String,
@@ -53,43 +53,42 @@ date:{
 type:String,
 default:()=>new Date().toISOString().split("T")[0]
 }
-});
+})
 
 const alertSchema = new mongoose.Schema({
+type:String,
 createur:String,
 debut:Date,
 fin:Date,
 rapport:String
-});
+})
 
 const mortaliteSchema = new mongoose.Schema({
 nom:String,
 quantite:Number,
 date:Date
-});
+})
 
 const niveauSchema = new mongoose.Schema({
 niveau:String,
 nom:String,
 date:Date
-});
+})
 
-const User = mongoose.model("User",userSchema);
-const Garde = mongoose.model("Garde",gardeSchema);
-const Alert = mongoose.model("Alert",alertSchema);
-const Mortalite = mongoose.model("Mortalite",mortaliteSchema);
-const Niveau = mongoose.model("Niveau",niveauSchema);
+const User = mongoose.model("User",userSchema)
+const Garde = mongoose.model("Garde",gardeSchema)
+const Alert = mongoose.model("Alert",alertSchema)
+const Mortalite = mongoose.model("Mortalite",mortaliteSchema)
+const Niveau = mongoose.model("Niveau",niveauSchema)
 
 /* =========================
-Variables
+Variables temporaires
 ========================= */
 
-let attenteResumePhoto = {};
-let photoTemp = {};
-let attenteRapport = {};
-let attenteMortalite = {};
-let attenteNiveau = {};
-let alerteActive = null;
+let attenteMortalite={}
+let attenteNiveau={}
+let attenteResumePhoto={}
+let photoTemp={}
 
 /* =========================
 Webhook
@@ -98,16 +97,16 @@ Webhook
 app.get("/webhook",(req,res)=>{
 
 if(req.query["hub.verify_token"]===VERIFY_TOKEN){
-return res.status(200).send(req.query["hub.challenge"]);
+return res.status(200).send(req.query["hub.challenge"])
 }
 
-res.sendStatus(403);
+res.sendStatus(403)
 
-});
+})
 
 app.post("/webhook",async(req,res)=>{
 
-const body = req.body;
+const body=req.body
 
 if(body.object==="page"){
 
@@ -117,71 +116,71 @@ for(const event of entry.messaging){
 
 if(event.message){
 
-const text = event.message.text;
-const payload = event.message.quick_reply?.payload;
+const text=event.message.text
+const payload=event.message.quick_reply?.payload
 
 if(event.message.attachments){
-await handlePhoto(event.sender.id,event.message.attachments);
+await handlePhoto(event.sender.id,event.message.attachments)
 }else{
-await handleMessage(event.sender.id,payload||text);
+await handleMessage(event.sender.id,payload||text)
 }
 
 }
 
 if(event.postback){
-await handleMessage(event.sender.id,event.postback.payload);
+await handleMessage(event.sender.id,event.postback.payload)
 }
 
 }
 
 }
 
-res.status(200).send("EVENT_RECEIVED");
+res.status(200).send("EVENT_RECEIVED")
 
 }else{
-res.sendStatus(404);
+res.sendStatus(404)
 }
 
-});
+})
 
 /* =========================
-Messages
+Envoi message
 ========================= */
 
-async function sendMessage(id,text){
+async function sendMessage(senderId,text){
 
 await axios.post(
 `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
-recipient:{id},
+recipient:{id:senderId},
 message:{text}
 }
-);
+)
 
 }
 
 async function sendToAll(text){
 
-const users = await User.find();
+const users=await User.find()
 
 for(const u of users){
 try{
-await sendMessage(u.messengerId,text);
+await sendMessage(u.messengerId,text)
 }catch{}
 }
 
 }
 
 /* =========================
-Menu rapide
+Menu
 ========================= */
 
-async function sendMenu(id,text="Choisis une action 👇"){
+async function sendMenu(senderId,text="Choisis une action 👇"){
 
 await axios.post(
 `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
-recipient:{id},
+recipient:{id:senderId},
 message:{
 text,
 quick_replies:[
@@ -191,50 +190,49 @@ quick_replies:[
 {content_type:"text",title:"📅 Résumé",payload:"resume"},
 {content_type:"text",title:"📚 Historique",payload:"historique"},
 {content_type:"text",title:"🏆 Classement",payload:"classement"},
-{content_type:"text",title:"🚨 Alerte",payload:"alerte"},
-{content_type:"text",title:"📋 Alertes",payload:"alertes"},
 {content_type:"text",title:"🐟 Mortalité",payload:"mortalite"},
-{content_type:"text",title:"💧 Niveau eau",payload:"niveau"},
-{content_type:"text",title:"✅ Fin alerte",payload:"fin alerte"}
+{content_type:"text",title:"💧 Niveau eau",payload:"niveau"}
 ]
 }
 }
-);
+)
 
 }
 
 /* =========================
-Photo incident
+PHOTO INCIDENT
 ========================= */
 
 async function handlePhoto(senderId,attachments){
 
-const url = attachments[0].payload.url;
+const url = attachments[0].payload.url
 
-photoTemp[senderId] = url;
-attenteResumePhoto[senderId] = true;
+photoTemp[senderId]=url
+attenteResumePhoto[senderId]=true
 
-await sendMessage(senderId,"📝 Décris l'incident");
+await sendMessage(senderId,"📝 Décris l'incident pour accompagner la photo")
 
 }
 
 /* =========================
-Bot principal
+BOT
 ========================= */
 
 async function handleMessage(senderId,text){
 
-if(!text) return;
+if(!text)return
 
-text = text.toLowerCase();
+text=text.toLowerCase()
 
-let user = await User.findOne({messengerId:senderId});
+let user=await User.findOne({messengerId:senderId})
 
-/* PHOTO + RESUME */
+/* PHOTO RESUME */
 
 if(attenteResumePhoto[senderId]){
 
-const users = await User.find();
+const photo=photoTemp[senderId]
+
+const users=await User.find()
 
 for(const u of users){
 
@@ -245,211 +243,253 @@ recipient:{id:u.messengerId},
 message:{
 attachment:{
 type:"image",
-payload:{url:photoTemp}
+payload:{url:photo,is_reusable:true}
 }
 }
 }
-);
+)
 
 await sendMessage(u.messengerId,
 `🚨 INCIDENT
 
-👤 ${user?.nom}
+👤 ${user?.nom||"inconnu"}
 🕒 ${new Date().toLocaleString("fr-FR")}
 
-📝 ${text}`);
+📝 ${text}`
+)
+
 }
 
-attenteResumePhoto[senderId] = false;
+attenteResumePhoto[senderId]=false
+delete photoTemp[senderId]
 
-await sendMenu(senderId,"✅ Incident envoyé");
+await sendMenu(senderId,"✅ Incident envoyé à toute l'équipe")
 
-return;
-
+return
 }
 
 /* NOM */
 
 if(text.startsWith("nom ")){
 
-const nom = text.replace("nom ","");
+const nom=text.replace("nom ","")
 
 if(!user){
-user = new User({messengerId:senderId,nom});
+user=new User({messengerId:senderId,nom})
 }else{
-user.nom = nom;
+user.nom=nom
 }
 
-await user.save();
+await user.save()
 
-await sendMenu(senderId,"✅ Nom enregistré");
+await sendMenu(senderId,"✅ Nom enregistré")
 
-return;
-
+return
 }
 
 /* ARRIVEE */
 
 if(text==="arrivee"){
 
+if(!user){
+await sendMenu(senderId,"⚠️ Enregistre ton nom")
+return
+}
+
+const deja=await Garde.findOne({messengerId:senderId,depart:null})
+
+if(deja){
+await sendMenu(senderId,"⚠️ Tu es déjà en garde")
+return
+}
+
 await Garde.create({
 messengerId:senderId,
 nom:user.nom,
 arrivee:new Date()
-});
+})
 
-await sendToAll(`🟢 ${user.nom} vient de prendre la garde`);
+await sendToAll(`🟢 ${user.nom} vient de prendre la garde`)
 
-await sendMenu(senderId);
+await sendMenu(senderId)
 
-return;
-
+return
 }
 
 /* DEPART */
 
 if(text==="depart"){
 
-const garde = await Garde.findOne({messengerId:senderId,depart:null});
+const garde=await Garde.findOne({messengerId:senderId,depart:null})
 
 if(!garde){
-await sendMenu(senderId,"❌ Pas en garde");
-return;
+await sendMenu(senderId,"❌ Aucune garde active")
+return
 }
 
-garde.depart = new Date();
-await garde.save();
+garde.depart=new Date()
+await garde.save()
 
-await sendToAll(`🔴 ${user.nom} a quitté la garde`);
+await sendToAll(`🔴 ${user.nom} a quitté la garde`)
 
-await sendMenu(senderId);
+await sendMenu(senderId)
 
-return;
-
+return
 }
 
 /* EN GARDE */
 
 if(text==="en garde"){
 
-const gardes = await Garde.find({depart:null});
+const gardes=await Garde.find({depart:null})
 
-const liste = gardes.map(g=>"• "+g.nom).join("\n");
+if(gardes.length===0){
+await sendMenu(senderId,"👀 Personne en garde")
+return
+}
 
-await sendMenu(senderId,"👀 En garde :\n"+liste);
+const liste=gardes.map(g=>"• "+g.nom).join("\n")
 
-return;
+await sendMenu(senderId,"👀 En garde :\n"+liste)
 
+return
 }
 
 /* RESUME */
 
 if(text==="resume"){
 
-const today = new Date().toISOString().split("T")[0];
+const today=new Date().toISOString().split("T")[0]
 
-const gardes = await Garde.find({date:today});
+const gardes=await Garde.find({date:today})
 
-const liste = gardes.map(g=>{
-const a = new Date(g.arrivee).toLocaleTimeString("fr-FR");
-const d = g.depart ? new Date(g.depart).toLocaleTimeString("fr-FR") : "En cours";
-return `${g.nom} ${a} → ${d}`;
-}).join("\n");
+const liste=gardes.map(g=>{
 
-await sendMenu(senderId,"📅 Résumé\n\n"+liste);
+const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
 
-return;
+const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
+return `• ${g.nom} ${a} → ${d}`
+
+}).join("\n")
+
+await sendMenu(senderId,"📅 Résumé\n\n"+liste)
+
+return
+}
+
+/* HISTORIQUE */
+
+if(text==="historique"){
+
+const gardes=await Garde.find().sort({arrivee:-1}).limit(10)
+
+const liste=gardes.map(g=>{
+const d=new Date(g.arrivee).toLocaleDateString("fr-FR")
+return `• ${g.nom} (${d})`
+}).join("\n")
+
+await sendMenu(senderId,"📚 Historique\n\n"+liste)
+
+return
 }
 
 /* CLASSEMENT */
 
 if(text==="classement"){
 
-const gardes = await Garde.find({depart:{$ne:null}});
+const gardes=await Garde.find({depart:{$ne:null}})
 
-const stats = {};
+const stats={}
 
 for(const g of gardes){
 
-const duration = (new Date(g.depart)-new Date(g.arrivee))/1000;
+const duration=(new Date(g.depart)-new Date(g.arrivee))/1000
 
-if(!stats[g.nom]) stats[g.nom]=0;
+if(!stats[g.nom])stats[g.nom]=0
 
-stats[g.nom]+=duration;
-
-}
-
-const classement = Object.entries(stats)
-.sort((a,b)=>b[1]-a[1]);
-
-const msg = classement.map((c,i)=>{
-
-const h = Math.floor(c[1]/3600);
-
-return `${i+1}. ${c[0]} — ${h}h`;
-
-}).join("\n");
-
-await sendMenu(senderId,"🏆 Classement\n\n"+msg);
-
-return;
+stats[g.nom]+=duration
 
 }
 
-/* ALERTE */
+const classement=Object.entries(stats)
+.sort((a,b)=>b[1]-a[1])
 
-if(text==="alerte"){
+const msg=classement.map((c,i)=>{
 
-alerteActive = {
-createur:user.nom,
-debut:new Date()
-};
+const h=Math.floor(c[1]/3600)
 
-await sendToAll(`🚨 ALERTE déclenchée par ${user.nom}`);
+return `${i+1}. ${c[0]} — ${h}h`
 
-await sendMenu(senderId);
+}).join("\n")
 
-return;
+await sendMenu(senderId,"🏆 Classement\n\n"+msg)
 
+return
 }
 
-/* FIN ALERTE */
+/* MORTALITE */
 
-if(text==="fin alerte"){
+if(text==="mortalite"){
 
-attenteRapport[senderId] = true;
+attenteMortalite[senderId]=true
 
-await sendMessage(senderId,"📝 Décris la situation");
+await sendMessage(senderId,"Combien de poissons morts ?")
 
-return;
-
+return
 }
 
-if(attenteRapport[senderId]){
+if(attenteMortalite[senderId]){
 
-await Alert.create({
-createur:alerteActive?.createur,
-debut:alerteActive?.debut,
-fin:new Date(),
-rapport:text
-});
+const q=parseInt(text)
 
-await sendToAll(`✅ FIN ALERTE\n\n${text}`);
+await Mortalite.create({
+nom:user.nom,
+quantite:q,
+date:new Date()
+})
 
-attenteRapport[senderId] = false;
-alerteActive = null;
+await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
 
-await sendMenu(senderId);
+attenteMortalite[senderId]=false
 
-return;
+await sendMenu(senderId)
 
+return
+}
+
+/* NIVEAU */
+
+if(text==="niveau"){
+
+attenteNiveau[senderId]=true
+
+await sendMessage(senderId,"Niveau ? normal / bas / critique")
+
+return
+}
+
+if(attenteNiveau[senderId]){
+
+await Niveau.create({
+niveau:text,
+nom:user.nom,
+date:new Date()
+})
+
+await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
+
+attenteNiveau[senderId]=false
+
+await sendMenu(senderId)
+
+return
 }
 
 }
 
 /* =========================
-Messenger config
+CONFIG MESSENGER
 ========================= */
 
 async function setGetStarted(){
@@ -459,7 +499,7 @@ await axios.post(
 {
 get_started:{payload:"GET_STARTED"}
 }
-);
+)
 
 }
 
@@ -470,7 +510,7 @@ await axios.delete(
 {
 data:{fields:["persistent_menu"]}
 }
-);
+)
 
 }
 
@@ -485,32 +525,31 @@ locale:"default",
 composer_input_disabled:false,
 call_to_actions:[
 {type:"postback",title:"🟢 Arrivée",payload:"arrivee"},
-{type:"postback",title:"🔴 Départ",payload:"depart"},
-{type:"postback",title:"🚨 Alerte",payload:"alerte"}
+{type:"postback",title:"🔴 Départ",payload:"depart"}
 ]
 }
 ]
 }
-);
+)
 
 }
 
 /* =========================
-Rapport automatique
+RAPPORT AUTOMATIQUE
 ========================= */
 
 cron.schedule("0 20 * * *",async()=>{
 
-const today = new Date().toISOString().split("T")[0];
+const today=new Date().toISOString().split("T")[0]
 
-const gardes = await Garde.find({date:today});
+const gardes=await Garde.find({date:today})
 
-const msg = gardes.map(g=>{
-const a = new Date(g.arrivee).toLocaleTimeString("fr-FR");
-const d = g.depart ? new Date(g.depart).toLocaleTimeString("fr-FR") : "En cours";
-return `${g.nom} ${a}→${d}`;
-}).join("\n");
+const msg=gardes.map(g=>{
+const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
+const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
+return `${g.nom} ${a}→${d}`
+}).join("\n")
 
-await sendToAll(`📅 Rapport du jour\n\n${msg}`);
+await sendToAll(`📅 Rapport du jour\n\n${msg}`)
 
-});
+})

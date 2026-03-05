@@ -38,8 +38,9 @@ mongoose.connect(MONGODB_URI)
       console.log("🚀 Bot démarré sur le port " + PORT);
 
       try {
-        await setGetStarted();
-        await setPersistentMenu();
+         await setGetStarted();
+         await resetMessengerMenu();
+         await setPersistentMenu();
       } catch (err) {
         console.log("⚠️ Menu déjà configuré ou erreur API");
       }
@@ -393,6 +394,18 @@ async function setPersistentMenu() {
   );
 
   console.log("✅ Menu persistant activé");
+}
+async function resetMessengerMenu() {
+  await axios.delete(
+    `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      data: {
+        fields: ["persistent_menu"]
+      }
+    }
+  );
+
+  console.log("🧹 Ancien menu supprimé");
 }
 /* =========================
    📅 Résumé automatique à 20h

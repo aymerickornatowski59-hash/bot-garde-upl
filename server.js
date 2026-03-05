@@ -16,7 +16,7 @@ MongoDB
 ========================= */
 
 mongoose.connect(MONGODB_URI)
-.then(()=>{
+.then(async ()=>{
 
 console.log("✅ MongoDB connecté")
 
@@ -25,9 +25,11 @@ app.listen(PORT, async ()=>{
 console.log("🚀 Bot démarré")
 
 try{
+
 await setGetStarted()
 await resetMessengerMenu()
 await setPersistentMenu()
+
 }catch(e){}
 
 })
@@ -56,7 +58,6 @@ default:()=>new Date().toISOString().split("T")[0]
 })
 
 const alertSchema = new mongoose.Schema({
-type:String,
 createur:String,
 debut:Date,
 fin:Date,
@@ -161,22 +162,6 @@ message:{text}
 
 }
 
-async function sendToAll(text){
-
-const users=await User.find()
-
-for(const u of users){
-try{
-await sendMessage(u.messengerId,text)
-}catch{}
-}
-
-}
-
-/* =========================
-Menu
-========================= */
-
 async function sendMenu(senderId,text="Choisis une action 👇"){
 
 await axios.post(
@@ -205,7 +190,7 @@ quick_replies:[
 }
 
 /* =========================
-PHOTO INCIDENT
+Photo incident
 ========================= */
 
 async function handlePhoto(senderId,attachments){
@@ -231,11 +216,12 @@ text=text.toLowerCase()
 
 let user=await User.findOne({messengerId:senderId})
 
-/* PHOTO RESUME */
+/* INCIDENT PHOTO */
 
 if(attenteResumePhoto[senderId]){
 
 const photo=photoTemp[senderId]
+
 const users=await User.find()
 
 for(const u of users){
@@ -247,7 +233,7 @@ recipient:{id:u.messengerId},
 message:{
 attachment:{
 type:"image",
-payload:{url:photo,is_reusable:true}
+payload:{url:photo}
 }
 }
 }
@@ -256,7 +242,7 @@ payload:{url:photo,is_reusable:true}
 await sendMessage(u.messengerId,
 `🚨 INCIDENT
 
-👤 ${user?.nom||"inconnu"}
+👤 ${user.nom}
 🕒 ${new Date().toLocaleString("fr-FR")}
 
 📝 ${text}`
@@ -267,7 +253,7 @@ await sendMessage(u.messengerId,
 attenteResumePhoto[senderId]=false
 delete photoTemp[senderId]
 
-await sendMenu(senderId,"✅ Incident envoyé à toute l'équipe")
+await sendMenu(senderId,"✅ Incident envoyé")
 
 return
 }
@@ -300,22 +286,14 @@ await sendMenu(senderId,"⚠️ Enregistre ton nom")
 return
 }
 
-const deja=await Garde.findOne({messengerId:senderId,depart:null})
-
-if(deja){
-await sendMenu(senderId,"⚠️ Tu es déjà en garde")
-return
-}
-
 await Garde.create({
 messengerId:senderId,
 nom:user.nom,
 arrivee:new Date()
 })
 
-await sendToAll(`🟢 ${user.nom} vient de prendre la garde`)
+await sendMenu(senderId,`🟢 ${user.nom} est en garde`)
 
-await sendMenu(senderId)
 return
 }
 
@@ -333,9 +311,8 @@ return
 garde.depart=new Date()
 await garde.save()
 
-await sendToAll(`🔴 ${user.nom} a quitté la garde`)
+await sendMenu(senderId,`🔴 ${user.nom} a quitté la garde`)
 
-await sendMenu(senderId)
 return
 }
 
@@ -345,139 +322,10 @@ if(text==="en garde"){
 
 const gardes=await Garde.find({depart:null})
 
-if(gardes.length===0){
-await sendMenu(senderId,"👀 Personne en garde")
-return
-}
-
 const liste=gardes.map(g=>"• "+g.nom).join("\n")
 
 await sendMenu(senderId,"👀 En garde :\n"+liste)
-return
-}
 
-/* RESUME */
-
-if(text==="resume"){
-
-const today=new Date().toISOString().split("T")[0]
-
-const gardes=await Garde.find({date:today})
-
-const liste=gardes.map(g=>{
-
-const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
-const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
-
-return `• ${g.nom} ${a} → ${d}`
-
-}).join("\n")
-
-await sendMenu(senderId,"📅 Résumé\n\n"+liste)
-return
-}
-
-/* HISTORIQUE */
-
-if(text==="historique"){
-
-const gardes=await Garde.find().sort({arrivee:-1}).limit(10)
-
-const liste=gardes.map(g=>{
-const d=new Date(g.arrivee).toLocaleDateString("fr-FR")
-return `• ${g.nom} (${d})`
-}).join("\n")
-
-await sendMenu(senderId,"📚 Historique\n\n"+liste)
-return
-}
-
-/* CLASSEMENT */
-
-if(text==="classement"){
-
-const gardes=await Garde.find({depart:{$ne:null}})
-
-const stats={}
-
-for(const g of gardes){
-
-const duration=(new Date(g.depart)-new Date(g.arrivee))/1000
-
-if(!stats[g.nom])stats[g.nom]=0
-
-stats[g.nom]+=duration
-
-}
-
-const classement=Object.entries(stats)
-.sort((a,b)=>b[1]-a[1])
-
-const msg=classement.map((c,i)=>{
-
-const h=Math.floor(c[1]/3600)
-
-return `${i+1}. ${c[0]} — ${h}h`
-
-}).join("\n")
-
-await sendMenu(senderId,"🏆 Classement\n\n"+msg)
-return
-}
-
-/* ALERTE */
-
-if(text==="alerte"){
-
-alerteActive=true
-
-await sendToAll(`🚨 ALERTE déclenchée par ${user.nom}`)
-
-await sendMenu(senderId)
-return
-}
-
-/* FIN ALERTE */
-
-if(text==="fin alerte"){
-
-attenteRapport[senderId]=true
-
-await sendMessage(senderId,"📝 Décris le rapport de fin d'alerte")
-
-return
-}
-
-if(attenteRapport[senderId]){
-
-await Alert.create({
-type:"incident",
-createur:user.nom,
-debut:new Date(),
-rapport:text
-})
-
-await sendToAll(`✅ Fin alerte\n📝 ${text}`)
-
-attenteRapport[senderId]=false
-alerteActive=null
-
-await sendMenu(senderId)
-return
-}
-
-/* HISTORIQUE ALERTES */
-
-if(text==="alertes"){
-
-const alerts=await Alert.find().sort({debut:-1}).limit(10)
-
-const msg=alerts.map(a=>{
-const d=new Date(a.debut).toLocaleDateString("fr-FR")
-return `🚨 ${a.type}\n${d}\n${a.rapport||""}`
-}).join("\n\n")
-
-await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
 return
 }
 
@@ -494,23 +342,20 @@ return
 
 if(attenteMortalite[senderId]){
 
-const q=parseInt(text)
-
 await Mortalite.create({
 nom:user.nom,
-quantite:q,
+quantite:text,
 date:new Date()
 })
 
-await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
+await sendMenu(senderId,"🐟 Mortalité enregistrée")
 
 attenteMortalite[senderId]=false
 
-await sendMenu(senderId)
 return
 }
 
-/* NIVEAU EAU */
+/* NIVEAU */
 
 if(text==="niveau"){
 
@@ -529,11 +374,10 @@ nom:user.nom,
 date:new Date()
 })
 
-await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
+await sendMenu(senderId,`💧 Niveau eau : ${text}`)
 
 attenteNiveau[senderId]=false
 
-await sendMenu(senderId)
 return
 }
 
@@ -587,7 +431,7 @@ call_to_actions:[
 }
 
 /* =========================
-RAPPORT AUTOMATIQUE
+Rapport automatique
 ========================= */
 
 cron.schedule("0 20 * * *",async()=>{
@@ -602,6 +446,10 @@ const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 return `${g.nom} ${a}→${d}`
 }).join("\n")
 
-await sendToAll(`📅 Rapport du jour\n\n${msg}`)
+const users=await User.find()
+
+for(const u of users){
+await sendMessage(u.messengerId,`📅 Rapport du jour\n\n${msg}`)
+}
 
 })

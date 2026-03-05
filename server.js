@@ -454,65 +454,65 @@ return
 
 /* ALERTE */
 
-if(text==="alerte"){
+if(text==="alertes"){
 
-await sendMessage(senderId,"Type : pollution / poisson / eau / conflit")
+const alerts = await Alert.find().sort({debut:-1}).limit(5)
+const morts = await Mortalite.find().sort({date:-1}).limit(5)
+const niveaux = await Niveau.find().sort({date:-1}).limit(5)
 
-return
-}
+let historique = "📋 Historique incidents\n\n"
 
-if(text.startsWith("pollution")||text.startsWith("poisson")||text.startsWith("eau")||text.startsWith("conflit")){
+/* ALERTES */
 
-alertActive=new Alert({
-type:text,
-createur:user.nom,
-debut:new Date()
+alerts.forEach(a=>{
+
+const d = new Date(a.debut).toLocaleDateString("fr-FR")
+
+historique +=
+`🚨 ${a.type}
+📅 ${d}
+👤 ${a.createur}
+📝 ${a.rapport||"Aucun rapport"}
+
+`
+
 })
 
-await alertActive.save()
+/* MORTALITE */
 
-await sendToAll(`🚨 ALERTE\n${text}\npar ${user.nom}`)
+morts.forEach(m=>{
 
-await sendMenu(senderId)
+const d = new Date(m.date).toLocaleDateString("fr-FR")
+
+historique +=
+`🐟 Mortalité
+📅 ${d}
+👤 ${m.nom}
+Quantité : ${m.quantite}
+
+`
+
+})
+
+/* NIVEAU EAU */
+
+niveaux.forEach(n=>{
+
+const d = new Date(n.date).toLocaleDateString("fr-FR")
+
+historique +=
+`💧 Niveau eau
+📅 ${d}
+👤 ${n.nom}
+Niveau : ${n.niveau}
+
+`
+
+})
+
+await sendMenu(senderId,historique)
+
 return
-}
-
-/* FIN ALERTE */
-
-if(text==="fin alerte"){
-
-if(!alertActive){
-await sendMenu(senderId,"❌ Aucune alerte active")
-return
-}
-
-attenteRapport[senderId]=true
-
-await sendMessage(senderId,"Écris le rapport")
-
-return
-}
-
-/* RAPPORT */
-
-if(attenteRapport[senderId]){
-
-alertActive.fin=new Date()
-alertActive.rapport=text
-
-await alertActive.save()
-
-await sendToAll(`✅ Alerte terminée\n\n${text}`)
-
-alertActive=null
-attenteRapport[senderId]=false
-
-await sendMenu(senderId)
-return
-}
-
-await sendMenu(senderId)
-
 }
 
 /* =========================

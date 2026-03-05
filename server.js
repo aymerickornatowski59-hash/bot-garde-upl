@@ -291,6 +291,8 @@ async function handleMessage(senderId, text) {
 
     await sendToAll(`🔴 ${user.nom} a quitté la garde`);
 
+    await sendMenu(senderId);
+
     return;
 
   }

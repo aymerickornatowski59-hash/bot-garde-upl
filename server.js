@@ -375,21 +375,6 @@ await sendMenu(senderId,"🏆 Classement\n\n"+msg)
 return
 }
 
-/* ALERTES HISTORIQUE */
-
-if(text==="alertes"){
-
-const alerts=await Alert.find().sort({debut:-1}).limit(10)
-
-const msg=alerts.map(a=>{
-const d=new Date(a.debut).toLocaleDateString("fr-FR")
-return `🚨 ${a.type}\n${d}\n${a.rapport||""}`
-}).join("\n\n")
-
-await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
-return
-}
-
 /* MORTALITE */
 
 if(text==="mortalite"){

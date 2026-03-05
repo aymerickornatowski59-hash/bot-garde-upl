@@ -174,7 +174,7 @@ Menu
 async function sendMenu(senderId,text="Choisis une action 👇"){
 
 await axios.post(
-https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN},
+`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
 recipient:{id:senderId},
 message:{
@@ -206,7 +206,7 @@ async function handlePhoto(senderId,attachments){
 
 const user=await User.findOne({messengerId:senderId})
 
-await sendToAll(📷 Incident signalé par ${user?.nom||"quelqu'un"})
+await sendToAll(`📷 Incident signalé par ${user?.nom || "quelqu'un"}`)
 
 }
 
@@ -262,7 +262,7 @@ nom:user.nom,
 arrivee:new Date()
 })
 
-await sendToAll(🟢 ${user.nom} vient de prendre la garde)
+await sendToAll(`🟢 ${user.nom} vient de prendre la garde`)
 
 await sendMenu(senderId)
 return
@@ -282,7 +282,7 @@ return
 garde.depart=new Date()
 await garde.save()
 
-await sendToAll(🔴 ${user.nom} a quitté la garde)
+await sendToAll(`🔴 ${user.nom} a quitté la garde`)
 
 await sendMenu(senderId)
 return
@@ -319,7 +319,7 @@ const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
 
 const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
-return • ${g.nom} ${a} → ${d}
+return `• ${g.nom} ${a} → ${d}`
 
 }).join("\n")
 
@@ -335,7 +335,7 @@ const gardes=await Garde.find().sort({arrivee:-1}).limit(10)
 
 const liste=gardes.map(g=>{
 const d=new Date(g.arrivee).toLocaleDateString("fr-FR")
-return • ${g.nom} (${d})
+return `• ${g.nom} (${d})`
 }).join("\n")
 
 await sendMenu(senderId,"📚 Historique\n\n"+liste)
@@ -367,7 +367,7 @@ const msg=classement.map((c,i)=>{
 
 const h=Math.floor(c[1]/3600)
 
-return ${i+1}. ${c[0]} — ${h}h
+return `${i+1}. ${c[0]} — ${h}h`
 
 }).join("\n")
 
@@ -413,7 +413,7 @@ date:new Date()
 
 await mort.save()
 
-await sendToAll(🐟 Mortalité signalée\n${q} poissons\npar ${user.nom})
+await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
 
 attenteMortalite[senderId]=false
 
@@ -443,7 +443,7 @@ date:new Date()
 
 await niv.save()
 
-await sendToAll(💧 Niveau eau : ${text}\nsignalé par ${user.nom})
+await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
 
 attenteNiveau[senderId]=false
 

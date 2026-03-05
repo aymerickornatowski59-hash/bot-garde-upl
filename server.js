@@ -1,41 +1,39 @@
-const express = require("express")
-const mongoose = require("mongoose")
-const axios = require("axios")
-const cron = require("node-cron")
+const express = require("express");
+const mongoose = require("mongoose");
+const axios = require("axios");
+const cron = require("node-cron");
 
-const app = express()
-app.use(express.json())
+const app = express();
+app.use(express.json());
 
-const PORT = process.env.PORT || 3000
-const MONGODB_URI = process.env.MONGODB_URI
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI;
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
 /* =========================
-MongoDB
+Connexion MongoDB
 ========================= */
 
 mongoose.connect(MONGODB_URI)
-.then(async ()=>{
+.then(()=>{
 
-console.log("✅ MongoDB connecté")
+console.log("✅ MongoDB connecté");
 
 app.listen(PORT, async ()=>{
 
-console.log("🚀 Bot démarré")
+console.log("🚀 Bot démarré");
 
 try{
-
-await setGetStarted()
-await resetMessengerMenu()
-await setPersistentMenu()
-
+await setGetStarted();
+await resetMessengerMenu();
+await setPersistentMenu();
 }catch(e){}
 
-})
+});
 
 })
-.catch(err=>console.log(err))
+.catch(err=>console.log(err));
 
 /* =========================
 Schemas
@@ -44,7 +42,7 @@ Schemas
 const userSchema = new mongoose.Schema({
 messengerId:String,
 nom:String
-})
+});
 
 const gardeSchema = new mongoose.Schema({
 messengerId:String,
@@ -55,43 +53,43 @@ date:{
 type:String,
 default:()=>new Date().toISOString().split("T")[0]
 }
-})
+});
 
 const alertSchema = new mongoose.Schema({
 createur:String,
 debut:Date,
 fin:Date,
 rapport:String
-})
+});
 
 const mortaliteSchema = new mongoose.Schema({
 nom:String,
 quantite:Number,
 date:Date
-})
+});
 
 const niveauSchema = new mongoose.Schema({
 niveau:String,
 nom:String,
 date:Date
-})
+});
 
-const User = mongoose.model("User",userSchema)
-const Garde = mongoose.model("Garde",gardeSchema)
-const Alert = mongoose.model("Alert",alertSchema)
-const Mortalite = mongoose.model("Mortalite",mortaliteSchema)
-const Niveau = mongoose.model("Niveau",niveauSchema)
+const User = mongoose.model("User",userSchema);
+const Garde = mongoose.model("Garde",gardeSchema);
+const Alert = mongoose.model("Alert",alertSchema);
+const Mortalite = mongoose.model("Mortalite",mortaliteSchema);
+const Niveau = mongoose.model("Niveau",niveauSchema);
 
 /* =========================
-Variables temporaires
+Variables
 ========================= */
 
-let attenteResumePhoto={}
-let photoTemp={}
-let attenteMortalite={}
-let attenteNiveau={}
-let attenteRapport={}
-let alerteActive=null
+let attenteResumePhoto = {};
+let photoTemp = {};
+let attenteRapport = {};
+let attenteMortalite = {};
+let attenteNiveau = {};
+let alerteActive = null;
 
 /* =========================
 Webhook
@@ -100,16 +98,16 @@ Webhook
 app.get("/webhook",(req,res)=>{
 
 if(req.query["hub.verify_token"]===VERIFY_TOKEN){
-return res.status(200).send(req.query["hub.challenge"])
+return res.status(200).send(req.query["hub.challenge"]);
 }
 
-res.sendStatus(403)
+res.sendStatus(403);
 
-})
+});
 
 app.post("/webhook",async(req,res)=>{
 
-const body=req.body
+const body = req.body;
 
 if(body.object==="page"){
 
@@ -119,55 +117,71 @@ for(const event of entry.messaging){
 
 if(event.message){
 
-const text=event.message.text
-const payload=event.message.quick_reply?.payload
+const text = event.message.text;
+const payload = event.message.quick_reply?.payload;
 
 if(event.message.attachments){
-await handlePhoto(event.sender.id,event.message.attachments)
+await handlePhoto(event.sender.id,event.message.attachments);
 }else{
-await handleMessage(event.sender.id,payload||text)
+await handleMessage(event.sender.id,payload||text);
 }
 
 }
 
 if(event.postback){
-await handleMessage(event.sender.id,event.postback.payload)
+await handleMessage(event.sender.id,event.postback.payload);
 }
 
 }
 
 }
 
-res.status(200).send("EVENT_RECEIVED")
+res.status(200).send("EVENT_RECEIVED");
 
 }else{
-res.sendStatus(404)
+res.sendStatus(404);
 }
 
-})
+});
 
 /* =========================
-Envoi message
+Messages
 ========================= */
 
-async function sendMessage(senderId,text){
+async function sendMessage(id,text){
 
 await axios.post(
 `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
-recipient:{id:senderId},
+recipient:{id},
 message:{text}
 }
-)
+);
 
 }
 
-async function sendMenu(senderId,text="Choisis une action 👇"){
+async function sendToAll(text){
+
+const users = await User.find();
+
+for(const u of users){
+try{
+await sendMessage(u.messengerId,text);
+}catch{}
+}
+
+}
+
+/* =========================
+Menu rapide
+========================= */
+
+async function sendMenu(id,text="Choisis une action 👇"){
 
 await axios.post(
 `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
 {
-recipient:{id:senderId},
+recipient:{id},
 message:{
 text,
 quick_replies:[
@@ -185,7 +199,7 @@ quick_replies:[
 ]
 }
 }
-)
+);
 
 }
 
@@ -195,34 +209,32 @@ Photo incident
 
 async function handlePhoto(senderId,attachments){
 
-const url=attachments[0].payload.url
+const url = attachments[0].payload.url;
 
-photoTemp[senderId]=url
-attenteResumePhoto[senderId]=true
+photoTemp[senderId] = url;
+attenteResumePhoto[senderId] = true;
 
-await sendMessage(senderId,"📝 Décris l'incident pour accompagner la photo")
+await sendMessage(senderId,"📝 Décris l'incident");
 
 }
 
 /* =========================
-BOT
+Bot principal
 ========================= */
 
 async function handleMessage(senderId,text){
 
-if(!text)return
+if(!text) return;
 
-text=text.toLowerCase()
+text = text.toLowerCase();
 
-let user=await User.findOne({messengerId:senderId})
+let user = await User.findOne({messengerId:senderId});
 
-/* INCIDENT PHOTO */
+/* PHOTO + RESUME */
 
 if(attenteResumePhoto[senderId]){
 
-const photo=photoTemp[senderId]
-
-const users=await User.find()
+const users = await User.find();
 
 for(const u of users){
 
@@ -233,158 +245,211 @@ recipient:{id:u.messengerId},
 message:{
 attachment:{
 type:"image",
-payload:{url:photo}
+payload:{url:photoTemp}
 }
 }
 }
-)
+);
 
 await sendMessage(u.messengerId,
 `🚨 INCIDENT
 
-👤 ${user.nom}
+👤 ${user?.nom}
 🕒 ${new Date().toLocaleString("fr-FR")}
 
-📝 ${text}`
-)
-
+📝 ${text}`);
 }
 
-attenteResumePhoto[senderId]=false
-delete photoTemp[senderId]
+attenteResumePhoto[senderId] = false;
 
-await sendMenu(senderId,"✅ Incident envoyé")
+await sendMenu(senderId,"✅ Incident envoyé");
 
-return
+return;
+
 }
 
 /* NOM */
 
 if(text.startsWith("nom ")){
 
-const nom=text.replace("nom ","")
+const nom = text.replace("nom ","");
 
 if(!user){
-user=new User({messengerId:senderId,nom})
+user = new User({messengerId:senderId,nom});
 }else{
-user.nom=nom
+user.nom = nom;
 }
 
-await user.save()
+await user.save();
 
-await sendMenu(senderId,"✅ Nom enregistré")
+await sendMenu(senderId,"✅ Nom enregistré");
 
-return
+return;
+
 }
 
 /* ARRIVEE */
 
 if(text==="arrivee"){
 
-if(!user){
-await sendMenu(senderId,"⚠️ Enregistre ton nom")
-return
-}
-
 await Garde.create({
 messengerId:senderId,
 nom:user.nom,
 arrivee:new Date()
-})
+});
 
-await sendMenu(senderId,`🟢 ${user.nom} est en garde`)
+await sendToAll(`🟢 ${user.nom} vient de prendre la garde`);
 
-return
+await sendMenu(senderId);
+
+return;
+
 }
 
 /* DEPART */
 
 if(text==="depart"){
 
-const garde=await Garde.findOne({messengerId:senderId,depart:null})
+const garde = await Garde.findOne({messengerId:senderId,depart:null});
 
 if(!garde){
-await sendMenu(senderId,"❌ Aucune garde active")
-return
+await sendMenu(senderId,"❌ Pas en garde");
+return;
 }
 
-garde.depart=new Date()
-await garde.save()
+garde.depart = new Date();
+await garde.save();
 
-await sendMenu(senderId,`🔴 ${user.nom} a quitté la garde`)
+await sendToAll(`🔴 ${user.nom} a quitté la garde`);
 
-return
+await sendMenu(senderId);
+
+return;
+
 }
 
 /* EN GARDE */
 
 if(text==="en garde"){
 
-const gardes=await Garde.find({depart:null})
+const gardes = await Garde.find({depart:null});
 
-const liste=gardes.map(g=>"• "+g.nom).join("\n")
+const liste = gardes.map(g=>"• "+g.nom).join("\n");
 
-await sendMenu(senderId,"👀 En garde :\n"+liste)
+await sendMenu(senderId,"👀 En garde :\n"+liste);
 
-return
+return;
+
 }
 
-/* MORTALITE */
+/* RESUME */
 
-if(text==="mortalite"){
+if(text==="resume"){
 
-attenteMortalite[senderId]=true
+const today = new Date().toISOString().split("T")[0];
 
-await sendMessage(senderId,"Combien de poissons morts ?")
+const gardes = await Garde.find({date:today});
 
-return
+const liste = gardes.map(g=>{
+const a = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+const d = g.depart ? new Date(g.depart).toLocaleTimeString("fr-FR") : "En cours";
+return `${g.nom} ${a} → ${d}`;
+}).join("\n");
+
+await sendMenu(senderId,"📅 Résumé\n\n"+liste);
+
+return;
+
 }
 
-if(attenteMortalite[senderId]){
+/* CLASSEMENT */
 
-await Mortalite.create({
-nom:user.nom,
-quantite:text,
-date:new Date()
-})
+if(text==="classement"){
 
-await sendMenu(senderId,"🐟 Mortalité enregistrée")
+const gardes = await Garde.find({depart:{$ne:null}});
 
-attenteMortalite[senderId]=false
+const stats = {};
 
-return
+for(const g of gardes){
+
+const duration = (new Date(g.depart)-new Date(g.arrivee))/1000;
+
+if(!stats[g.nom]) stats[g.nom]=0;
+
+stats[g.nom]+=duration;
+
 }
 
-/* NIVEAU */
+const classement = Object.entries(stats)
+.sort((a,b)=>b[1]-a[1]);
 
-if(text==="niveau"){
+const msg = classement.map((c,i)=>{
 
-attenteNiveau[senderId]=true
+const h = Math.floor(c[1]/3600);
 
-await sendMessage(senderId,"Niveau ? normal / bas / critique")
+return `${i+1}. ${c[0]} — ${h}h`;
 
-return
+}).join("\n");
+
+await sendMenu(senderId,"🏆 Classement\n\n"+msg);
+
+return;
+
 }
 
-if(attenteNiveau[senderId]){
+/* ALERTE */
 
-await Niveau.create({
-niveau:text,
-nom:user.nom,
-date:new Date()
-})
+if(text==="alerte"){
 
-await sendMenu(senderId,`💧 Niveau eau : ${text}`)
+alerteActive = {
+createur:user.nom,
+debut:new Date()
+};
 
-attenteNiveau[senderId]=false
+await sendToAll(`🚨 ALERTE déclenchée par ${user.nom}`);
 
-return
+await sendMenu(senderId);
+
+return;
+
+}
+
+/* FIN ALERTE */
+
+if(text==="fin alerte"){
+
+attenteRapport[senderId] = true;
+
+await sendMessage(senderId,"📝 Décris la situation");
+
+return;
+
+}
+
+if(attenteRapport[senderId]){
+
+await Alert.create({
+createur:alerteActive?.createur,
+debut:alerteActive?.debut,
+fin:new Date(),
+rapport:text
+});
+
+await sendToAll(`✅ FIN ALERTE\n\n${text}`);
+
+attenteRapport[senderId] = false;
+alerteActive = null;
+
+await sendMenu(senderId);
+
+return;
+
 }
 
 }
 
 /* =========================
-CONFIG MESSENGER
+Messenger config
 ========================= */
 
 async function setGetStarted(){
@@ -394,7 +459,7 @@ await axios.post(
 {
 get_started:{payload:"GET_STARTED"}
 }
-)
+);
 
 }
 
@@ -405,7 +470,7 @@ await axios.delete(
 {
 data:{fields:["persistent_menu"]}
 }
-)
+);
 
 }
 
@@ -426,7 +491,7 @@ call_to_actions:[
 }
 ]
 }
-)
+);
 
 }
 
@@ -436,20 +501,16 @@ Rapport automatique
 
 cron.schedule("0 20 * * *",async()=>{
 
-const today=new Date().toISOString().split("T")[0]
+const today = new Date().toISOString().split("T")[0];
 
-const gardes=await Garde.find({date:today})
+const gardes = await Garde.find({date:today});
 
-const msg=gardes.map(g=>{
-const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
-const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
-return `${g.nom} ${a}→${d}`
-}).join("\n")
+const msg = gardes.map(g=>{
+const a = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+const d = g.depart ? new Date(g.depart).toLocaleTimeString("fr-FR") : "En cours";
+return `${g.nom} ${a}→${d}`;
+}).join("\n");
 
-const users=await User.find()
+await sendToAll(`📅 Rapport du jour\n\n${msg}`);
 
-for(const u of users){
-await sendMessage(u.messengerId,`📅 Rapport du jour\n\n${msg}`)
-}
-
-})
+});

@@ -262,6 +262,8 @@ async function handleMessage(senderId, text) {
       `🟢 ${user.nom} vient de prendre la garde\n\n👀 En garde :\n${liste}`
     );
 
+     await sendMenu(senderId);
+
     return;
 
   }

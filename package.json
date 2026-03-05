@@ -2,6 +2,7 @@
   "name": "bot-garde-upl",
   "version": "1.0.0",
   "description": "Bot Messenger gestion des gardes avec MongoDB",
+  "type": "commonjs"
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

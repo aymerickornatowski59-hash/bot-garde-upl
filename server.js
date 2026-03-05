@@ -12,8 +12,9 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
 /* =========================
-   🔥 Connexion MongoDB
+   MongoDB
 ========================= */
+
 mongoose.connect(MONGODB_URI)
 .then(() => {
 
@@ -34,12 +35,10 @@ mongoose.connect(MONGODB_URI)
   });
 
 })
-.catch(err => {
-  console.log("❌ MongoDB erreur", err);
-});
+.catch(err => console.log(err));
 
 /* =========================
-   📦 Schemas
+   Schemas
 ========================= */
 
 const userSchema = new mongoose.Schema({
@@ -62,7 +61,7 @@ const User = mongoose.model("User", userSchema);
 const Garde = mongoose.model("Garde", gardeSchema);
 
 /* =========================
-   🔐 Webhook verification
+   Webhook
 ========================= */
 
 app.get("/webhook", (req, res) => {
@@ -74,10 +73,6 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 
 });
-
-/* =========================
-   📩 Réception messages
-========================= */
 
 app.post("/webhook", async (req, res) => {
 
@@ -91,10 +86,10 @@ app.post("/webhook", async (req, res) => {
 
         if (event.message) {
 
-          const messageText = event.message.text;
+          const text = event.message.text;
           const payload = event.message.quick_reply?.payload;
 
-          await handleMessage(event.sender.id, payload || messageText);
+          await handleMessage(event.sender.id, payload || text);
 
         }
 
@@ -108,16 +103,18 @@ app.post("/webhook", async (req, res) => {
 
     }
 
-    return res.status(200).send("EVENT_RECEIVED");
+    res.status(200).send("EVENT_RECEIVED");
+
+  } else {
+
+    res.sendStatus(404);
 
   }
-
-  res.sendStatus(404);
 
 });
 
 /* =========================
-   📤 Envoi message
+   Envoi message simple
 ========================= */
 
 async function sendMessage(senderId, text) {
@@ -133,17 +130,17 @@ async function sendMessage(senderId, text) {
 }
 
 /* =========================
-   📤 Envoi boutons
+   Menu avec boutons
 ========================= */
 
-async function sendMenu(senderId) {
+async function sendMenu(senderId, text = "Choisis une action 👇") {
 
   await axios.post(
     `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
     {
       recipient: { id: senderId },
       message: {
-        text: "Choisis une action 👇",
+        text,
         quick_replies: [
           { content_type: "text", title: "🟢 Arrivée", payload: "arrivee" },
           { content_type: "text", title: "🔴 Départ", payload: "depart" },
@@ -159,7 +156,7 @@ async function sendMenu(senderId) {
 }
 
 /* =========================
-   📤 Message à toute l'équipe
+   Message à toute l'équipe
 ========================= */
 
 async function sendToAll(text) {
@@ -171,7 +168,7 @@ async function sendToAll(text) {
     try {
       await sendMessage(user.messengerId, text);
     } catch (err) {
-      console.log("Erreur envoi à", user.messengerId);
+      console.log("Erreur envoi", user.messengerId);
     }
 
   }
@@ -179,7 +176,7 @@ async function sendToAll(text) {
 }
 
 /* =========================
-   🧠 Logique BOT
+   Logique BOT
 ========================= */
 
 async function handleMessage(senderId, text) {
@@ -190,6 +187,8 @@ async function handleMessage(senderId, text) {
 
   let user = await User.findOne({ messengerId: senderId });
 
+  /* START */
+
   if (text === "get_started") {
 
     await sendMessage(senderId, "👋 Bienvenue ! Enregistre ton nom avec : nom TonPrenom");
@@ -197,9 +196,11 @@ async function handleMessage(senderId, text) {
 
   }
 
+  /* ENREGISTRER NOM */
+
   if (text.startsWith("nom ")) {
 
-    const nom = text.substring(4).trim();
+    const nom = text.replace("nom ", "");
 
     if (!user) {
 
@@ -216,22 +217,19 @@ async function handleMessage(senderId, text) {
 
     await user.save();
 
-    await sendMessage(senderId, "✅ Nom enregistré");
-    await sendMenu(senderId);
+    await sendMenu(senderId, `✅ Nom enregistré : ${nom}`);
 
     return;
 
   }
 
-  /* =========================
-     ARRIVEE
-  ========================= */
+  /* ARRIVEE */
 
   if (text === "arrivee") {
 
     if (!user) {
 
-      await sendMessage(senderId, "⚠️ Enregistre ton nom avec : nom TonPrenom");
+      await sendMenu(senderId, "⚠️ Enregistre ton nom avec : nom TonPrenom");
       return;
 
     }
@@ -243,7 +241,7 @@ async function handleMessage(senderId, text) {
 
     if (deja) {
 
-      await sendMessage(senderId, "⚠️ Tu es déjà en garde.");
+      await sendMenu(senderId, "⚠️ Tu es déjà en garde");
       return;
 
     }
@@ -262,15 +260,13 @@ async function handleMessage(senderId, text) {
       `🟢 ${user.nom} vient de prendre la garde\n\n👀 En garde :\n${liste}`
     );
 
-     await sendMenu(senderId);
+    await sendMenu(senderId);
 
     return;
 
   }
 
-  /* =========================
-     DEPART
-  ========================= */
+  /* DEPART */
 
   if (text === "depart") {
 
@@ -281,7 +277,7 @@ async function handleMessage(senderId, text) {
 
     if (!garde) {
 
-      await sendMessage(senderId, "❌ Aucune garde active.");
+      await sendMenu(senderId, "❌ Aucune garde active");
       return;
 
     }
@@ -297,9 +293,7 @@ async function handleMessage(senderId, text) {
 
   }
 
-  /* =========================
-     QUI EST EN GARDE
-  ========================= */
+  /* EN GARDE */
 
   if (text === "en garde") {
 
@@ -307,14 +301,119 @@ async function handleMessage(senderId, text) {
 
     if (gardes.length === 0) {
 
-      await sendMessage(senderId, "👀 Personne en garde.");
+      await sendMenu(senderId, "👀 Personne en garde");
       return;
 
     }
 
     const liste = gardes.map(g => `• ${g.nom}`).join("\n");
 
-    await sendMessage(senderId, `🟢 En garde :\n${liste}`);
+    await sendMenu(senderId, `👀 En garde :\n${liste}`);
+
+    return;
+
+  }
+
+  /* RESUME */
+
+  if (text === "resume") {
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const gardes = await Garde.find({ date: today });
+
+    if (gardes.length === 0) {
+
+      await sendMenu(senderId, "📅 Aucune garde aujourd'hui");
+      return;
+
+    }
+
+    const liste = gardes.map(g => {
+
+      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+
+      const depart = g.depart
+        ? new Date(g.depart).toLocaleTimeString("fr-FR")
+        : "En cours";
+
+      return `• ${g.nom}\n🕒 ${arrivee} → ${depart}`;
+
+    }).join("\n\n");
+
+    await sendMenu(senderId, `📅 Résumé du jour\n\n${liste}`);
+
+    return;
+
+  }
+
+  /* HISTORIQUE */
+
+  if (text === "historique") {
+
+    const gardes = await Garde.find()
+      .sort({ arrivee: -1 })
+      .limit(5);
+
+    const liste = gardes.map(g => {
+
+      const date = new Date(g.arrivee).toLocaleDateString("fr-FR");
+
+      const arrivee = new Date(g.arrivee).toLocaleTimeString("fr-FR");
+
+      const depart = g.depart
+        ? new Date(g.depart).toLocaleTimeString("fr-FR")
+        : "En cours";
+
+      return `• ${g.nom}\n📆 ${date}\n🕒 ${arrivee} → ${depart}`;
+
+    }).join("\n\n");
+
+    await sendMenu(senderId, `📚 Historique\n\n${liste}`);
+
+    return;
+
+  }
+
+  /* CLASSEMENT */
+
+  if (text === "classement") {
+
+    const gardes = await Garde.find({ depart: { $ne: null } });
+
+    const stats = {};
+
+    for (const g of gardes) {
+
+      const duration = (new Date(g.depart) - new Date(g.arrivee)) / 1000;
+
+      if (!stats[g.nom]) {
+
+        stats[g.nom] = { total: 0, count: 0 };
+
+      }
+
+      stats[g.nom].total += duration;
+      stats[g.nom].count++;
+
+    }
+
+    const classement = Object.entries(stats)
+      .sort((a, b) => b[1].total - a[1].total);
+
+    const message = classement.map((c, i) => {
+
+      const nom = c[0];
+      const total = c[1].total;
+
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+
+      return `${i + 1}. ${nom} — ${h}h${m}`;
+
+    }).join("\n");
+
+    await sendMenu(senderId, `🏆 Classement\n\n${message}`);
 
     return;
 
@@ -325,7 +424,7 @@ async function handleMessage(senderId, text) {
 }
 
 /* =========================
-   📌 Get Started
+   Messenger config
 ========================= */
 
 async function setGetStarted() {
@@ -333,17 +432,11 @@ async function setGetStarted() {
   await axios.post(
     `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
     {
-      get_started: {
-        payload: "GET_STARTED"
-      }
+      get_started: { payload: "GET_STARTED" }
     }
   );
 
 }
-
-/* =========================
-   📌 Reset menu
-========================= */
 
 async function resetMessengerMenu() {
 
@@ -357,10 +450,6 @@ async function resetMessengerMenu() {
   );
 
 }
-
-/* =========================
-   📌 Menu Messenger
-========================= */
 
 async function setPersistentMenu() {
 
@@ -384,7 +473,7 @@ async function setPersistentMenu() {
 }
 
 /* =========================
-   📅 Résumé automatique
+   Résumé automatique 20h
 ========================= */
 
 cron.schedule("0 20 * * *", async () => {

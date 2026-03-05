@@ -99,6 +99,29 @@ if(event.message){
 const text=event.message.text;
 const payload=event.message.quick_reply?.payload;
 
+/* PHOTO INCIDENT */
+
+if(event.message.attachments){
+
+const attachment=event.message.attachments[0]
+
+if(attachment.type==="image"){
+
+const imageUrl=attachment.payload.url
+
+const user=await User.findOne({messengerId:event.sender.id})
+
+await sendImageToAll(
+imageUrl,
+`📷 Incident signalé par ${user?.nom || "Quelqu'un"}`
+)
+
+return
+
+}
+
+}
+
 await handleMessage(event.sender.id,payload||text);
 
 }
@@ -136,6 +159,45 @@ recipient:{id:senderId},
 message:{text}
 }
 );
+
+}
+
+
+async function sendImage(senderId,imageUrl,caption=""){
+
+await axios.post(
+`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+{
+recipient:{id:senderId},
+message:{
+attachment:{
+type:"image",
+payload:{
+url:imageUrl,
+is_reusable:true
+}
+}
+}
+}
+)
+
+if(caption){
+await sendMessage(senderId,caption)
+}
+
+}
+
+async function sendImageToAll(imageUrl,caption=""){
+
+const users=await User.find()
+
+for(const user of users){
+
+try{
+await sendImage(user.messengerId,imageUrl,caption)
+}catch{}
+
+}
 
 }
 

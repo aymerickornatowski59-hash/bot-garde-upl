@@ -206,7 +206,7 @@ async function handlePhoto(senderId,attachments){
 
 const user=await User.findOne({messengerId:senderId})
 
-await sendToAll(`📷 Incident signalé par ${user?.nom || "quelqu'un"}`)
+await sendToAll(`📷 Incident signalé par ${user?.nom||"quelqu'un"}`)
 
 }
 
@@ -316,6 +316,7 @@ const gardes=await Garde.find({date:today})
 const liste=gardes.map(g=>{
 
 const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
+
 const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
 return `• ${g.nom} ${a} → ${d}`
@@ -373,6 +374,144 @@ return `${i+1}. ${c[0]} — ${h}h`
 await sendMenu(senderId,"🏆 Classement\n\n"+msg)
 return
 }
+
+/* ALERTES HISTORIQUE */
+
+if(text==="alertes"){
+
+const alerts=await Alert.find().sort({debut:-1}).limit(10)
+
+const msg=alerts.map(a=>{
+const d=new Date(a.debut).toLocaleDateString("fr-FR")
+return `🚨 ${a.type}\n${d}\n${a.rapport||""}`
+}).join("\n\n")
+
+await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
+return
+}
+
+/* MORTALITE */
+
+if(text==="mortalite"){
+
+attenteMortalite[senderId]=true
+
+await sendMessage(senderId,"Combien de poissons morts ?")
+
+return
+}
+
+if(attenteMortalite[senderId]){
+
+const q=parseInt(text)
+
+const mort=new Mortalite({
+nom:user.nom,
+quantite:q,
+date:new Date()
+})
+
+await mort.save()
+
+await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
+
+attenteMortalite[senderId]=false
+
+await sendMenu(senderId)
+
+return
+}
+
+/* NIVEAU EAU */
+
+if(text==="niveau"){
+
+attenteNiveau[senderId]=true
+
+await sendMessage(senderId,"Niveau ? normal / bas / critique")
+
+return
+}
+
+if(attenteNiveau[senderId]){
+
+const niv=new Niveau({
+niveau:text,
+nom:user.nom,
+date:new Date()
+})
+
+await niv.save()
+
+await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
+
+attenteNiveau[senderId]=false
+
+await sendMenu(senderId)
+
+return
+}
+
+/* ALERTE */
+
+if(text==="alerte"){
+
+await sendMessage(senderId,"Type : pollution / poisson / eau / conflit")
+
+return
+}
+
+if(text.startsWith("pollution")||text.startsWith("poisson")||text.startsWith("eau")||text.startsWith("conflit")){
+
+alertActive=new Alert({
+type:text,
+createur:user.nom,
+debut:new Date()
+})
+
+await alertActive.save()
+
+await sendToAll(`🚨 ALERTE\n${text}\npar ${user.nom}`)
+
+await sendMenu(senderId)
+return
+}
+
+/* FIN ALERTE */
+
+if(text==="fin alerte"){
+
+if(!alertActive){
+await sendMenu(senderId,"❌ Aucune alerte active")
+return
+}
+
+attenteRapport[senderId]=true
+
+await sendMessage(senderId,"Écris le rapport")
+
+return
+}
+
+/* RAPPORT */
+
+if(attenteRapport[senderId]){
+
+alertActive.fin=new Date()
+alertActive.rapport=text
+
+await alertActive.save()
+
+await sendToAll(`✅ Alerte terminée\n\n${text}`)
+
+alertActive=null
+attenteRapport[senderId]=false
+
+await sendMenu(senderId)
+return
+}
+
+await sendMenu(senderId)
 
 }
 

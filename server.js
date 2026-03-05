@@ -514,6 +514,8 @@ await sendMenu(senderId, historique)
 
 return
 }
+
+}
 /* =========================
 CONFIG MESSENGER
 ========================= */

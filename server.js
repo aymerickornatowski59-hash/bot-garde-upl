@@ -407,6 +407,22 @@ async function resetMessengerMenu() {
 
   console.log("🧹 Ancien menu supprimé");
 }
+await axios.post(
+  `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+  {
+    recipient: { id: senderId },
+    message: {
+      text: "Choisis une action 👇",
+      quick_replies: [
+        { content_type: "text", title: "🟢 Arrivée", payload: "arrivee" },
+        { content_type: "text", title: "🔴 Départ", payload: "depart" },
+        { content_type: "text", title: "👀 En garde", payload: "en garde" },
+        { content_type: "text", title: "📅 Résumé", payload: "resume" },
+        { content_type: "text", title: "🏆 Classement", payload: "classement" }
+      ]
+    }
+  }
+);
 /* =========================
    📅 Résumé automatique à 20h
 ========================= */

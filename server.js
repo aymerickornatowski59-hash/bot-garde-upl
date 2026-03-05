@@ -168,7 +168,7 @@ quick_replies:[
 }
 
 /* =========================
-Menu type alerte
+Menu alerte
 ========================= */
 
 async function sendAlerteMenu(senderId){
@@ -296,6 +296,108 @@ return;
 
 }
 
+/* EN GARDE */
+
+if(text==="en garde"){
+
+const gardes=await Garde.find({depart:null});
+
+if(gardes.length===0){
+await sendMenu(senderId,"👀 Personne en garde");
+return;
+}
+
+const liste=gardes.map(g=>"• "+g.nom).join("\n");
+
+await sendMenu(senderId,"👀 En garde :\n"+liste);
+return;
+
+}
+
+/* RESUME */
+
+if(text==="resume"){
+
+const today=new Date().toISOString().split("T")[0];
+
+const gardes=await Garde.find({date:today});
+
+if(gardes.length===0){
+await sendMenu(senderId,"📅 Aucune garde aujourd'hui");
+return;
+}
+
+const liste=gardes.map(g=>{
+
+const arrivee=new Date(g.arrivee).toLocaleTimeString("fr-FR");
+
+const depart=g.depart
+?new Date(g.depart).toLocaleTimeString("fr-FR")
+:"En cours";
+
+return `• ${g.nom} ${arrivee} → ${depart}`;
+
+}).join("\n");
+
+await sendMenu(senderId,"📅 Résumé du jour\n\n"+liste);
+return;
+
+}
+
+/* HISTORIQUE */
+
+if(text==="historique"){
+
+const gardes=await Garde.find().sort({arrivee:-1}).limit(10);
+
+const liste=gardes.map(g=>{
+
+const date=new Date(g.arrivee).toLocaleDateString("fr-FR");
+
+return `• ${g.nom} (${date})`;
+
+}).join("\n");
+
+await sendMenu(senderId,"📚 Historique\n\n"+liste);
+return;
+
+}
+
+/* CLASSEMENT */
+
+if(text==="classement"){
+
+const gardes=await Garde.find({depart:{$ne:null}});
+
+const stats={};
+
+for(const g of gardes){
+
+const duration=(new Date(g.depart)-new Date(g.arrivee))/1000;
+
+if(!stats[g.nom])stats[g.nom]={total:0,count:0};
+
+stats[g.nom].total+=duration;
+stats[g.nom].count++;
+
+}
+
+const classement=Object.entries(stats)
+.sort((a,b)=>b[1].total-a[1].total);
+
+const message=classement.map((c,i)=>{
+
+const h=Math.floor(c[1].total/3600);
+
+return `${i+1}. ${c[0]} — ${h}h`;
+
+}).join("\n");
+
+await sendMenu(senderId,"🏆 Classement\n\n"+message);
+return;
+
+}
+
 /* ALERTE */
 
 if(text==="alerte"){
@@ -371,24 +473,6 @@ alertActive=null;
 attenteRapport[senderId]=false;
 
 await sendMenu(senderId);
-return;
-
-}
-
-/* EN GARDE */
-
-if(text==="en garde"){
-
-const gardes=await Garde.find({depart:null});
-
-if(gardes.length===0){
-await sendMenu(senderId,"👀 Personne en garde");
-return;
-}
-
-const liste=gardes.map(g=>"• "+g.nom).join("\n");
-
-await sendMenu(senderId,"👀 En garde :\n"+liste);
 return;
 
 }

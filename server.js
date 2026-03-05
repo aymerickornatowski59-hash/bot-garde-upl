@@ -1,39 +1,39 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const axios = require("axios");
-const cron = require("node-cron");
+const express = require("express")
+const mongoose = require("mongoose")
+const axios = require("axios")
+const cron = require("node-cron")
 
-const app = express();
-app.use(express.json());
+const app = express()
+app.use(express.json())
 
-const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const PORT = process.env.PORT || 3000
+const MONGODB_URI = process.env.MONGODB_URI
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN
 
 /* =========================
 MongoDB
 ========================= */
 
 mongoose.connect(MONGODB_URI)
-.then(() => {
+.then(()=>{
 
-console.log("✅ MongoDB connecté");
+console.log("✅ MongoDB connecté")
 
-app.listen(PORT, async () => {
+app.listen(PORT, async ()=>{
 
-console.log("🚀 Bot lancé sur port " + PORT);
+console.log("🚀 Bot démarré")
 
-try {
-await setGetStarted();
-await resetMessengerMenu();
-await setPersistentMenu();
-} catch (err) {}
-
-});
+try{
+await setGetStarted()
+await resetMessengerMenu()
+await setPersistentMenu()
+}catch(e){}
 
 })
-.catch(err => console.log(err));
+
+})
+.catch(err=>console.log(err))
 
 /* =========================
 Schemas
@@ -42,7 +42,7 @@ Schemas
 const userSchema = new mongoose.Schema({
 messengerId:String,
 nom:String
-});
+})
 
 const gardeSchema = new mongoose.Schema({
 messengerId:String,
@@ -51,9 +51,9 @@ arrivee:Date,
 depart:Date,
 date:{
 type:String,
-default:() => new Date().toISOString().split("T")[0]
+default:()=>new Date().toISOString().split("T")[0]
 }
-});
+})
 
 const alertSchema = new mongoose.Schema({
 type:String,
@@ -61,14 +61,30 @@ createur:String,
 debut:Date,
 fin:Date,
 rapport:String
-});
+})
 
-const User = mongoose.model("User",userSchema);
-const Garde = mongoose.model("Garde",gardeSchema);
-const Alert = mongoose.model("Alert",alertSchema);
+const mortaliteSchema = new mongoose.Schema({
+nom:String,
+quantite:Number,
+date:Date
+})
 
-let alertActive=null;
-let attenteRapport={};
+const niveauSchema = new mongoose.Schema({
+niveau:String,
+nom:String,
+date:Date
+})
+
+const User = mongoose.model("User",userSchema)
+const Garde = mongoose.model("Garde",gardeSchema)
+const Alert = mongoose.model("Alert",alertSchema)
+const Mortalite = mongoose.model("Mortalite",mortaliteSchema)
+const Niveau = mongoose.model("Niveau",niveauSchema)
+
+let alertActive=null
+let attenteRapport={}
+let attenteMortalite={}
+let attenteNiveau={}
 
 /* =========================
 Webhook
@@ -77,16 +93,16 @@ Webhook
 app.get("/webhook",(req,res)=>{
 
 if(req.query["hub.verify_token"]===VERIFY_TOKEN){
-return res.status(200).send(req.query["hub.challenge"]);
+return res.status(200).send(req.query["hub.challenge"])
 }
 
-res.sendStatus(403);
+res.sendStatus(403)
 
-});
+})
 
 app.post("/webhook",async(req,res)=>{
 
-const body=req.body;
+const body=req.body
 
 if(body.object==="page"){
 
@@ -96,32 +112,32 @@ for(const event of entry.messaging){
 
 if(event.message){
 
-const text=event.message.text;
-const payload=event.message.quick_reply?.payload;
+const text=event.message.text
+const payload=event.message.quick_reply?.payload
 
-await handleMessage(event.sender.id,payload||text);
+if(event.message.attachments){
+await handlePhoto(event.sender.id,event.message.attachments)
+}else{
+await handleMessage(event.sender.id,payload||text)
+}
 
 }
 
 if(event.postback){
-
-await handleMessage(event.sender.id,event.postback.payload);
-
+await handleMessage(event.sender.id,event.postback.payload)
 }
 
 }
 
 }
 
-res.status(200).send("EVENT_RECEIVED");
+res.status(200).send("EVENT_RECEIVED")
 
 }else{
-
-res.sendStatus(404);
-
+res.sendStatus(404)
 }
 
-});
+})
 
 /* =========================
 Envoi message
@@ -135,12 +151,24 @@ await axios.post(
 recipient:{id:senderId},
 message:{text}
 }
-);
+)
+
+}
+
+async function sendToAll(text){
+
+const users=await User.find()
+
+for(const u of users){
+try{
+await sendMessage(u.messengerId,text)
+}catch{}
+}
 
 }
 
 /* =========================
-Menu principal
+Menu
 ========================= */
 
 async function sendMenu(senderId,text="Choisis une action 👇"){
@@ -159,53 +187,26 @@ quick_replies:[
 {content_type:"text",title:"📚 Historique",payload:"historique"},
 {content_type:"text",title:"🏆 Classement",payload:"classement"},
 {content_type:"text",title:"🚨 Alerte",payload:"alerte"},
+{content_type:"text",title:"📋 Alertes",payload:"alertes"},
+{content_type:"text",title:"🐟 Mortalité",payload:"mortalite"},
+{content_type:"text",title:"💧 Niveau eau",payload:"niveau"},
 {content_type:"text",title:"✅ Fin alerte",payload:"fin alerte"}
 ]
 }
 }
-);
+)
 
 }
 
 /* =========================
-Menu alerte
+Photo incident
 ========================= */
 
-async function sendAlerteMenu(senderId){
+async function handlePhoto(senderId,attachments){
 
-await axios.post(
-`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-{
-recipient:{id:senderId},
-message:{
-text:"Choisis le type d'alerte",
-quick_replies:[
-{content_type:"text",title:"🚨 Pollution",payload:"alerte pollution"},
-{content_type:"text",title:"🐟 Poisson malade",payload:"alerte poisson"},
-{content_type:"text",title:"💧 Niveau eau",payload:"alerte eau"},
-{content_type:"text",title:"⚠️ Conflit",payload:"alerte conflit"}
-]
-}
-}
-);
+const user=await User.findOne({messengerId:senderId})
 
-}
-
-/* =========================
-Message à tous
-========================= */
-
-async function sendToAll(text){
-
-const users=await User.find();
-
-for(const user of users){
-
-try{
-await sendMessage(user.messengerId,text);
-}catch{}
-
-}
+await sendToAll(`📷 Incident signalé par ${user?.nom||"quelqu'un"}`)
 
 }
 
@@ -215,29 +216,28 @@ BOT
 
 async function handleMessage(senderId,text){
 
-if(!text)return;
+if(!text)return
 
-text=text.toLowerCase();
+text=text.toLowerCase()
 
-let user=await User.findOne({messengerId:senderId});
+let user=await User.findOne({messengerId:senderId})
 
 /* NOM */
 
 if(text.startsWith("nom ")){
 
-const nom=text.replace("nom ","");
+const nom=text.replace("nom ","")
 
 if(!user){
-user=new User({messengerId:senderId,nom});
+user=new User({messengerId:senderId,nom})
 }else{
-user.nom=nom;
+user.nom=nom
 }
 
-await user.save();
+await user.save()
 
-await sendMenu(senderId,"✅ Nom enregistré : "+nom);
-return;
-
+await sendMenu(senderId,"✅ Nom enregistré")
+return
 }
 
 /* ARRIVEE */
@@ -245,193 +245,236 @@ return;
 if(text==="arrivee"){
 
 if(!user){
-await sendMenu(senderId,"⚠️ Enregistre ton nom");
-return;
+await sendMenu(senderId,"⚠️ Enregistre ton nom")
+return
 }
 
-const deja=await Garde.findOne({
-messengerId:senderId,
-depart:null
-});
+const deja=await Garde.findOne({messengerId:senderId,depart:null})
 
 if(deja){
-await sendMenu(senderId,"⚠️ Tu es déjà en garde");
-return;
+await sendMenu(senderId,"⚠️ Tu es déjà en garde")
+return
 }
 
 await Garde.create({
 messengerId:senderId,
 nom:user.nom,
 arrivee:new Date()
-});
+})
 
-await sendToAll(`🟢 ${user.nom} vient de prendre la garde`);
+await sendToAll(`🟢 ${user.nom} vient de prendre la garde`)
 
-await sendMenu(senderId);
-return;
-
+await sendMenu(senderId)
+return
 }
 
 /* DEPART */
 
 if(text==="depart"){
 
-const garde=await Garde.findOne({
-messengerId:senderId,
-depart:null
-});
+const garde=await Garde.findOne({messengerId:senderId,depart:null})
 
 if(!garde){
-await sendMenu(senderId,"❌ Aucune garde active");
-return;
+await sendMenu(senderId,"❌ Aucune garde active")
+return
 }
 
-garde.depart=new Date();
-await garde.save();
+garde.depart=new Date()
+await garde.save()
 
-await sendToAll(`🔴 ${user.nom} a quitté la garde`);
+await sendToAll(`🔴 ${user.nom} a quitté la garde`)
 
-await sendMenu(senderId);
-return;
-
+await sendMenu(senderId)
+return
 }
 
 /* EN GARDE */
 
 if(text==="en garde"){
 
-const gardes=await Garde.find({depart:null});
+const gardes=await Garde.find({depart:null})
 
 if(gardes.length===0){
-await sendMenu(senderId,"👀 Personne en garde");
-return;
+await sendMenu(senderId,"👀 Personne en garde")
+return
 }
 
-const liste=gardes.map(g=>"• "+g.nom).join("\n");
+const liste=gardes.map(g=>"• "+g.nom).join("\n")
 
-await sendMenu(senderId,"👀 En garde :\n"+liste);
-return;
-
+await sendMenu(senderId,"👀 En garde :\n"+liste)
+return
 }
 
 /* RESUME */
 
 if(text==="resume"){
 
-const today=new Date().toISOString().split("T")[0];
+const today=new Date().toISOString().split("T")[0]
 
-const gardes=await Garde.find({date:today});
-
-if(gardes.length===0){
-await sendMenu(senderId,"📅 Aucune garde aujourd'hui");
-return;
-}
+const gardes=await Garde.find({date:today})
 
 const liste=gardes.map(g=>{
 
-const arrivee=new Date(g.arrivee).toLocaleTimeString("fr-FR");
+const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
 
-const depart=g.depart
-?new Date(g.depart).toLocaleTimeString("fr-FR")
-:"En cours";
+const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
 
-return `• ${g.nom} ${arrivee} → ${depart}`;
+return `• ${g.nom} ${a} → ${d}`
 
-}).join("\n");
+}).join("\n")
 
-await sendMenu(senderId,"📅 Résumé du jour\n\n"+liste);
-return;
-
+await sendMenu(senderId,"📅 Résumé\n\n"+liste)
+return
 }
 
 /* HISTORIQUE */
 
 if(text==="historique"){
 
-const gardes=await Garde.find().sort({arrivee:-1}).limit(10);
+const gardes=await Garde.find().sort({arrivee:-1}).limit(10)
 
 const liste=gardes.map(g=>{
+const d=new Date(g.arrivee).toLocaleDateString("fr-FR")
+return `• ${g.nom} (${d})`
+}).join("\n")
 
-const date=new Date(g.arrivee).toLocaleDateString("fr-FR");
-
-return `• ${g.nom} (${date})`;
-
-}).join("\n");
-
-await sendMenu(senderId,"📚 Historique\n\n"+liste);
-return;
-
+await sendMenu(senderId,"📚 Historique\n\n"+liste)
+return
 }
 
 /* CLASSEMENT */
 
 if(text==="classement"){
 
-const gardes=await Garde.find({depart:{$ne:null}});
+const gardes=await Garde.find({depart:{$ne:null}})
 
-const stats={};
+const stats={}
 
 for(const g of gardes){
 
-const duration=(new Date(g.depart)-new Date(g.arrivee))/1000;
+const duration=(new Date(g.depart)-new Date(g.arrivee))/1000
 
-if(!stats[g.nom])stats[g.nom]={total:0,count:0};
+if(!stats[g.nom])stats[g.nom]=0
 
-stats[g.nom].total+=duration;
-stats[g.nom].count++;
+stats[g.nom]+=duration
 
 }
 
 const classement=Object.entries(stats)
-.sort((a,b)=>b[1].total-a[1].total);
+.sort((a,b)=>b[1]-a[1])
 
-const message=classement.map((c,i)=>{
+const msg=classement.map((c,i)=>{
 
-const h=Math.floor(c[1].total/3600);
+const h=Math.floor(c[1]/3600)
 
-return `${i+1}. ${c[0]} — ${h}h`;
+return `${i+1}. ${c[0]} — ${h}h`
 
-}).join("\n");
+}).join("\n")
 
-await sendMenu(senderId,"🏆 Classement\n\n"+message);
-return;
+await sendMenu(senderId,"🏆 Classement\n\n"+msg)
+return
+}
 
+/* ALERTES HISTORIQUE */
+
+if(text==="alertes"){
+
+const alerts=await Alert.find().sort({debut:-1}).limit(10)
+
+const msg=alerts.map(a=>{
+const d=new Date(a.debut).toLocaleDateString("fr-FR")
+return `🚨 ${a.type}\n${d}\n${a.rapport||""}`
+}).join("\n\n")
+
+await sendMenu(senderId,"📋 Historique alertes\n\n"+msg)
+return
+}
+
+/* MORTALITE */
+
+if(text==="mortalite"){
+
+attenteMortalite[senderId]=true
+
+await sendMessage(senderId,"Combien de poissons morts ?")
+
+return
+}
+
+if(attenteMortalite[senderId]){
+
+const q=parseInt(text)
+
+const mort=new Mortalite({
+nom:user.nom,
+quantite:q,
+date:new Date()
+})
+
+await mort.save()
+
+await sendToAll(`🐟 Mortalité signalée\n${q} poissons\npar ${user.nom}`)
+
+attenteMortalite[senderId]=false
+
+await sendMenu(senderId)
+
+return
+}
+
+/* NIVEAU EAU */
+
+if(text==="niveau"){
+
+attenteNiveau[senderId]=true
+
+await sendMessage(senderId,"Niveau ? normal / bas / critique")
+
+return
+}
+
+if(attenteNiveau[senderId]){
+
+const niv=new Niveau({
+niveau:text,
+nom:user.nom,
+date:new Date()
+})
+
+await niv.save()
+
+await sendToAll(`💧 Niveau eau : ${text}\nsignalé par ${user.nom}`)
+
+attenteNiveau[senderId]=false
+
+await sendMenu(senderId)
+
+return
 }
 
 /* ALERTE */
 
 if(text==="alerte"){
-await sendAlerteMenu(senderId);
-return;
+
+await sendMessage(senderId,"Type : pollution / poisson / eau / conflit")
+
+return
 }
 
-if(text.startsWith("alerte ")){
-
-if(alertActive){
-await sendMenu(senderId,"⚠️ Une alerte est déjà active");
-return;
-}
-
-const type=text.replace("alerte ","");
+if(text.startsWith("pollution")||text.startsWith("poisson")||text.startsWith("eau")||text.startsWith("conflit")){
 
 alertActive=new Alert({
-type,
+type:text,
 createur:user.nom,
 debut:new Date()
-});
+})
 
-await alertActive.save();
+await alertActive.save()
 
-await sendToAll(
-`🚨 ALERTE
+await sendToAll(`🚨 ALERTE\n${text}\npar ${user.nom}`)
 
-Type : ${type}
-Signalée par : ${user.nom}`
-);
-
-await sendMenu(senderId);
-return;
-
+await sendMenu(senderId)
+return
 }
 
 /* FIN ALERTE */
@@ -439,50 +482,41 @@ return;
 if(text==="fin alerte"){
 
 if(!alertActive){
-await sendMenu(senderId,"❌ Aucune alerte active");
-return;
+await sendMenu(senderId,"❌ Aucune alerte active")
+return
 }
 
-attenteRapport[senderId]=true;
+attenteRapport[senderId]=true
 
-await sendMessage(senderId,"✏️ Écris le rapport de l'incident");
+await sendMessage(senderId,"Écris le rapport")
 
-return;
-
+return
 }
 
 /* RAPPORT */
 
 if(attenteRapport[senderId]){
 
-alertActive.fin=new Date();
-alertActive.rapport=text;
+alertActive.fin=new Date()
+alertActive.rapport=text
 
-await alertActive.save();
+await alertActive.save()
 
-await sendToAll(
-`✅ ALERTE TERMINÉE
+await sendToAll(`✅ Alerte terminée\n\n${text}`)
 
-Type : ${alertActive.type}
+alertActive=null
+attenteRapport[senderId]=false
 
-Rapport :
-${text}`
-);
-
-alertActive=null;
-attenteRapport[senderId]=false;
-
-await sendMenu(senderId);
-return;
-
+await sendMenu(senderId)
+return
 }
 
-await sendMenu(senderId);
+await sendMenu(senderId)
 
 }
 
 /* =========================
-Messenger config
+CONFIG MESSENGER
 ========================= */
 
 async function setGetStarted(){
@@ -492,7 +526,7 @@ await axios.post(
 {
 get_started:{payload:"GET_STARTED"}
 }
-);
+)
 
 }
 
@@ -503,7 +537,7 @@ await axios.delete(
 {
 data:{fields:["persistent_menu"]}
 }
-);
+)
 
 }
 
@@ -519,46 +553,31 @@ composer_input_disabled:false,
 call_to_actions:[
 {type:"postback",title:"🟢 Arrivée",payload:"arrivee"},
 {type:"postback",title:"🔴 Départ",payload:"depart"},
-{type:"postback",title:"🚨 Alerte",payload:"alerte"},
-{type:"postback",title:"✅ Fin alerte",payload:"fin alerte"}
+{type:"postback",title:"🚨 Alerte",payload:"alerte"}
 ]
 }
 ]
 }
-);
+)
 
 }
 
 /* =========================
-Résumé automatique
+RAPPORT AUTOMATIQUE
 ========================= */
 
 cron.schedule("0 20 * * *",async()=>{
 
-const today=new Date().toISOString().split("T")[0];
+const today=new Date().toISOString().split("T")[0]
 
-const gardes=await Garde.find({date:today});
+const gardes=await Garde.find({date:today})
 
-if(gardes.length===0)return;
+const msg=gardes.map(g=>{
+const a=new Date(g.arrivee).toLocaleTimeString("fr-FR")
+const d=g.depart?new Date(g.depart).toLocaleTimeString("fr-FR"):"En cours"
+return `${g.nom} ${a}→${d}`
+}).join("\n")
 
-const users=await User.find();
+await sendToAll(`📅 Rapport du jour\n\n${msg}`)
 
-const liste=gardes.map(g=>{
-
-const arrivee=new Date(g.arrivee).toLocaleTimeString("fr-FR");
-
-const depart=g.depart
-?new Date(g.depart).toLocaleTimeString("fr-FR")
-:"En cours";
-
-return `• ${g.nom} : ${arrivee} → ${depart}`;
-
-}).join("\n");
-
-const message=`📅 Résumé du jour\n\n${liste}`;
-
-for(const user of users){
-await sendMessage(user.messengerId,message);
-}
-
-});
+})
